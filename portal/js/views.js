@@ -176,13 +176,13 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
     const projs = details?.projects || [];
     const managed = details?.managed_clients || []; // New
 
-    // Fetch all clients if this user is a partner (for the dropdown)
+    // Fetch all clients if this user is a partner (for the dropdown) - runs every time but only fetches if partner
     React.useEffect(() => {
-        if (c.role === 'partner') {
+        if (details && c.role === 'partner') {
             window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
                 .then(res => setAllClients(res.clients || []));
         }
-    }, [c.role]);
+    }, [token, details, c.role]);
 
     const handlePromote = async () => {
         const newRole = c.role === 'partner' ? 'client' : 'partner';
