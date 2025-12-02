@@ -149,18 +149,143 @@ const ServiceSortModal = ({ services, onClose, onSave }) => {
 
 window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
     const Icons = window.Icons;
-    const [tab, setTab] = React.useState('profile'); 
-    const [details, setDetails] = React.useState(null); 
+    const [tab, setTab] = React.useState('profile');
+    const [details, setDetails] = React.useState(null);
     const [loading, setLoading] = React.useState(true);
-    React.useEffect(() => { setLoading(true); window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) }).then(res => { if(res.status === 'success') setDetails(res); }).finally(()=>setLoading(false)); }, [client]);
-    const handleSaveProfile = async (e) => { e.preventDefault(); const f = new FormData(e.target); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_client', token, client_id: client.id, full_name: f.get('full_name'), business_name: f.get('business_name'), email: f.get('email'), phone: f.get('phone'), status: f.get('status') }) }); if(res.status==='success') { onUpdate(); onClose(); } else alert(res.message); };
+    const [allClients, setAllClients] = React.useState([]); // For assignment dropdown
+
+    React.useEffect(() => {
+        setLoading(true);
+        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) })
+            .then(res => { if (res.status === 'success') setDetails(res); })
+            .finally(() => setLoading(false));
+    }, [client]);
+
+    const handleSaveProfile = async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_client', token, client_id: client.id, full_name: f.get('full_name'), business_name: f.get('business_name'), email: f.get('email'), phone: f.get('phone'), status: f.get('status') }) });
+        if (res.status === 'success') { onUpdate(); onClose(); } else alert(res.message);
+    };
+
     if (!details && loading) return <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"><div className="bg-white p-8 rounded-xl"><Icons.Loader/></div></div>;
-    const c = details?.client || client; 
-    const invs = details?.invoices || []; 
-    const subs = details?.subscriptions || []; 
+
+    const c = details?.client || client;
+    const invs = details?.invoices || [];
+    const subs = details?.subscriptions || [];
     const projs = details?.projects || [];
-    
-    return (<div className="fixed inset-0 bg-[#2c3259]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-fade-in"><div className="bg-slate-50 border-b p-6 flex justify-between items-start"><div><h2 className="text-2xl font-bold text-[#2c3259]">{c.full_name}</h2><div className="text-sm text-slate-500 flex gap-2 mt-1"><span>{c.business_name}</span><span>•</span><span className="font-mono text-slate-400">{c.email}</span></div></div><button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><Icons.Close/></button></div><div className="flex border-b px-6 gap-6">{['profile', 'financials', 'projects'].map(t => (<button key={t} onClick={()=>setTab(t)} className={`py-4 text-sm font-bold border-b-2 capitalize transition-colors ${tab===t ? 'border-[#2c3259] text-[#2c3259]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{t}</button>))}</div><div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">{tab === 'profile' && (<form onSubmit={handleSaveProfile} className="max-w-lg mx-auto space-y-6"><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Full Name</label><input name="full_name" defaultValue={c.full_name} className="w-full p-2 border rounded" required /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Status</label><select name="status" defaultValue={c.status} className="w-full p-2 border rounded"><option value="active">Active</option><option value="pending_invite">Pending Invite</option><option value="inactive">Inactive</option></select></div></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Email</label><input name="email" defaultValue={c.email} className="w-full p-2 border rounded" required /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Business</label><input name="business_name" defaultValue={c.business_name} className="w-full p-2 border rounded" /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Phone</label><input name="phone" defaultValue={window.formatPhone(c.phone)} className="w-full p-2 border rounded" /></div></div><button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow-lg hover:opacity-90">Save Changes</button></form>)}{tab === 'financials' && (<div className="space-y-8"><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Active Subscriptions</h3>{subs.length === 0 ? <p className="text-sm text-slate-400 italic">No active subscriptions found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Plan</th><th className="p-3">Amount</th><th className="p-3">Next Bill</th></tr></thead><tbody>{subs.map(s => <tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.plan}</td><td className="p-3">${s.amount}/{s.interval}</td><td className="p-3 text-slate-500">{s.next_bill}</td></tr>)}</tbody></table></div>}</div><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Invoice History</h3>{invs.length === 0 ? <p className="text-sm text-slate-400 italic">No invoices found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Date</th><th className="p-3">#</th><th className="p-3">Amount</th><th className="p-3">Status</th><th className="p-3 text-right">PDF</th></tr></thead><tbody>{invs.map(i => <tr key={i.id} className="border-b"><td className="p-3 text-slate-500">{i.date}</td><td className="p-3 font-mono text-xs">{i.number}</td><td className="p-3 font-bold">${i.amount}</td><td className="p-3"><span className={`px-2 py-1 rounded text-[10px] uppercase font-bold ${i.status==='paid'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{i.status}</span></td><td className="p-3 text-right"><a href={i.pdf} target="_blank" className="text-blue-600 hover:underline">Download</a></td></tr>)}</tbody></table></div>}</div></div>)}{tab === 'projects' && (<div><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-[#2c3259]">Client Projects</h3></div>{projs.length === 0 ? <div className="p-8 text-center border-2 border-dashed rounded-lg text-slate-400">No projects found.</div> : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{projs.map(p => (<div key={p.id} className="bg-white p-4 rounded-lg border shadow-sm"><div className="flex justify-between mb-2"><h4 className="font-bold">{p.title}</h4><span className="text-xs bg-slate-100 px-2 py-1 rounded uppercase font-bold">{p.status}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="h-full bg-[#dba000]" style={{width: p.health_score + '%'}}></div></div></div>))}</div>}</div>)}</div></div></div>);
+    const managed = details?.managed_clients || []; // New
+
+    // Fetch all clients if this user is a partner (for the dropdown)
+    React.useEffect(() => {
+        if (c.role === 'partner') {
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
+                .then(res => setAllClients(res.clients || []));
+        }
+    }, [c.role]);
+
+    const handlePromote = async () => {
+        const newRole = c.role === 'partner' ? 'client' : 'partner';
+        if (confirm(`Change role to ${newRole.toUpperCase()}?`)) {
+            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_user_role', token, client_id: client.id, role: newRole }) });
+            if (res.status === 'success') { onUpdate(); onClose(); }
+        }
+    };
+
+    const handleAssign = async (targetId) => {
+        if (!targetId) return;
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_client_partner', token, partner_id: client.id, client_id: targetId }) });
+        if (res.status === 'success') {
+            // reload details
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) }).then(res => setDetails(res));
+        }
+    };
+
+    const handleUnassign = async (targetId) => {
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_client_partner', token, partner_id: client.id, client_id: targetId, action_type: 'remove' }) });
+        if (res.status === 'success') {
+             window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) }).then(res => setDetails(res));
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-[#2c3259]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-fade-in">
+                <div className="bg-slate-50 border-b p-6 flex justify-between items-start">
+                    <div>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-2xl font-bold text-[#2c3259]">{c.full_name}</h2>
+                            {c.role === 'partner' && <span className="bg-[#dba000] text-white text-[10px] px-2 py-1 rounded uppercase font-bold">Partner</span>}
+                        </div>
+                        <div className="text-sm text-slate-500 flex gap-2 mt-1"><span>{c.business_name}</span><span>•</span><span className="font-mono text-slate-400">{c.email}</span></div>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><Icons.Close/></button>
+                </div>
+                
+                <div className="flex border-b px-6 gap-6">
+                    {['profile', 'financials', 'projects', c.role === 'partner' ? 'managed clients' : null].filter(Boolean).map(t => (
+                        <button key={t} onClick={()=>setTab(t)} className={`py-4 text-sm font-bold border-b-2 capitalize transition-colors ${tab===t ? 'border-[#2c3259] text-[#2c3259]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{t}</button>
+                    ))}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
+                    {tab === 'profile' && (
+                        <form onSubmit={handleSaveProfile} className="max-w-lg mx-auto space-y-6">
+                            {/* ... (Existing profile inputs) ... */}
+                            <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Full Name</label><input name="full_name" defaultValue={c.full_name} className="w-full p-2 border rounded" required /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Status</label><select name="status" defaultValue={c.status} className="w-full p-2 border rounded"><option value="active">Active</option><option value="pending_invite">Pending Invite</option><option value="inactive">Inactive</option></select></div></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Email</label><input name="email" defaultValue={c.email} className="w-full p-2 border rounded" required /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Business</label><input name="business_name" defaultValue={c.business_name} className="w-full p-2 border rounded" /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Phone</label><input name="phone" defaultValue={window.formatPhone(c.phone)} className="w-full p-2 border rounded" /></div></div>
+                            
+                            <button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow-lg hover:opacity-90">Save Changes</button>
+                            
+                            <div className="pt-6 border-t mt-6">
+                                <button type="button" onClick={handlePromote} className="text-xs text-blue-600 underline">
+                                    {c.role === 'partner' ? 'Demote to Standard Client' : 'Promote to Partner (Manager)'}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                    
+                    {/* ... (Financials and Projects tabs remain same) ... */}
+                    {tab === 'financials' && (<div className="space-y-8"><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Active Subscriptions</h3>{subs.length === 0 ? <p className="text-sm text-slate-400 italic">No active subscriptions found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Plan</th><th className="p-3">Amount</th><th className="p-3">Next Bill</th></tr></thead><tbody>{subs.map(s => <tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.plan}</td><td className="p-3">${s.amount}/{s.interval}</td><td className="p-3 text-slate-500">{s.next_bill}</td></tr>)}</tbody></table></div>}</div><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Invoice History</h3>{invs.length === 0 ? <p className="text-sm text-slate-400 italic">No invoices found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Date</th><th className="p-3">#</th><th className="p-3">Amount</th><th className="p-3">Status</th><th className="p-3 text-right">PDF</th></tr></thead><tbody>{invs.map(i => <tr key={i.id} className="border-b"><td className="p-3 text-slate-500">{i.date}</td><td className="p-3 font-mono text-xs">{i.number}</td><td className="p-3 font-bold">${i.amount}</td><td className="p-3"><span className={`px-2 py-1 rounded text-[10px] uppercase font-bold ${i.status==='paid'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{i.status}</span></td><td className="p-3 text-right"><a href={i.pdf} target="_blank" className="text-blue-600 hover:underline">Download</a></td></tr>)}</tbody></table></div>}</div></div>)}
+                    {tab === 'projects' && (<div><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-[#2c3259]">Client Projects</h3></div>{projs.length === 0 ? <div className="p-8 text-center border-2 border-dashed rounded-lg text-slate-400">No projects found.</div> : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{projs.map(p => (<div key={p.id} className="bg-white p-4 rounded-lg border shadow-sm"><div className="flex justify-between mb-2"><h4 className="font-bold">{p.title}</h4><span className="text-xs bg-slate-100 px-2 py-1 rounded uppercase font-bold">{p.status}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="h-full bg-[#dba000]" style={{width: p.health_score + '%'}}></div></div></div>))}</div>}</div>)}
+
+                    {tab === 'managed clients' && (
+                        <div>
+                            <div className="bg-blue-50 border border-blue-200 p-4 rounded mb-6 text-sm text-blue-800">
+                                This user is a <strong>Partner</strong>. They can view projects and tickets for the clients listed below.
+                            </div>
+                            
+                            <div className="mb-6 flex gap-2">
+                                <select id="assign_client_select" className="flex-1 p-2 border rounded">
+                                    <option value="">Select a client to assign...</option>
+                                    {allClients.filter(ac => ac.id !== c.id && !managed.find(m => m.id === ac.id)).map(ac => (
+                                        <option key={ac.id} value={ac.id}>{ac.full_name} ({ac.business_name})</option>
+                                    ))}
+                                </select>
+                                <button onClick={() => handleAssign(document.getElementById('assign_client_select').value)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold">Assign</button>
+                            </div>
+
+                            <div className="bg-white border rounded overflow-hidden">
+                                {managed.length === 0 ? <div className="p-6 text-center text-slate-400">No clients assigned yet.</div> : (
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-slate-50 border-b"><tr><th className="p-3">Client</th><th className="p-3">Business</th><th className="p-3 text-right">Action</th></tr></thead>
+                                        <tbody>
+                                            {managed.map(m => (
+                                                <tr key={m.id} className="border-b">
+                                                    <td className="p-3 font-bold">{m.full_name}</td>
+                                                    <td className="p-3 text-slate-500">{m.business_name}</td>
+                                                    <td className="p-3 text-right"><button onClick={()=>handleUnassign(m.id)} className="text-red-500 hover:underline text-xs">Remove</button></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 window.ClientsView = ({ token, role }) => { 

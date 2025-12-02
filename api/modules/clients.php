@@ -4,15 +4,34 @@
 // ... (Keep handleGetClients, handleGetClientDetails, handleCreateClient, handleUpdateClient, handleSendOnboardingLink, handleSubmitOnboarding exactly as they were) ...
 function handleGetClients($pdo,$i){
     verifyAuth($i); ensureUserSchema($pdo);
-    $s=$pdo->query("SELECT id, full_name, email, business_name, phone, website, status, created_at FROM users WHERE role='client' ORDER BY created_at DESC");
+    // Updated to show Partners too
+    $s=$pdo->query("SELECT id, full_name, email, business_name, phone, website, status, role, created_at FROM users WHERE role IN ('client', 'partner') ORDER BY created_at DESC");
     sendJson('success','Fetched',['clients'=>$s->fetchAll()]);
 }
 
 function handleGetClientDetails($pdo, $input, $secrets) {
     $user = verifyAuth($input); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
     $clientId = (int)$input['client_id'];
-    $stmt = $pdo->prepare("SELECT id, full_name, email, business_name, phone, status, stripe_id FROM users WHERE id = ?"); $stmt->execute([$clientId]); $client = $stmt->fetch();
-    $stmt = $pdo->prepare("SELECT id, title, status, health_score FROM projects WHERE user_id = ?"); $stmt->execute([$clientId]); $projects = $stmt->fetchAll();
+    
+    // Fetch basic details
+    $stmt = $pdo->prepare("SELECT id, full_name, email, business_name, phone, status, role, stripe_id FROM users WHERE id = ?"); 
+    $stmt->execute([$clientId]); 
+    $client = $stmt->fetch();
+    
+    $projects = []; 
+    $stmt = $pdo->prepare("SELECT id, title, status, health_score FROM projects WHERE user_id = ?"); 
+    $stmt->execute([$clientId]); 
+    $projects = $stmt->fetchAll();
+
+    // IF PARTNER: Fetch assigned clients
+    $managedClients = [];
+    if ($client['role'] === 'partner') {
+        ensurePartnerSchema($pdo);
+        $s = $pdo->prepare("SELECT u.id, u.full_name, u.business_name FROM partner_assignments pa JOIN users u ON pa.client_id = u.id WHERE pa.partner_id = ?");
+        $s->execute([$clientId]);
+        $managedClients = $s->fetchAll();
+    }
+
     $invoices = []; $subscriptions = [];
     if (!empty($client['stripe_id'])) {
         $sid = $client['stripe_id'];
@@ -21,7 +40,8 @@ function handleGetClientDetails($pdo, $input, $secrets) {
         $rawSub = stripeRequest($secrets, 'GET', "subscriptions?customer=$sid&limit=5&expand%5B%5D=data.plan.product");
         foreach ($rawSub['data'] ?? [] as $s) $subscriptions[] = ['id'=>$s['id'], 'plan'=>$s['plan']['product']['name'], 'amount'=>number_format($s['plan']['amount']/100,2), 'interval'=>$s['plan']['interval'], 'next_bill'=>date('Y-m-d', $s['current_period_end'])];
     }
-    sendJson('success', 'Details', ['client' => $client, 'projects' => $projects, 'invoices' => $invoices, 'subscriptions' => $subscriptions]);
+    
+    sendJson('success', 'Details', ['client' => $client, 'projects' => $projects, 'invoices' => $invoices, 'subscriptions' => $subscriptions, 'managed_clients' => $managedClients]);
 }
 
 function handleCreateClient($pdo,$i,$s){
@@ -38,6 +58,34 @@ function handleUpdateClient($pdo, $input, $secrets) {
     $user = verifyAuth($input); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
     $pdo->prepare("UPDATE users SET full_name=?, email=?, business_name=?, phone=?, status=? WHERE id=?")->execute([$input['full_name'], $input['email'], $input['business_name'], $input['phone'], $input['status'], (int)$input['client_id']]);
     sendJson('success', 'Updated');
+}
+
+function handleUpdateUserRole($pdo, $i) {
+    $user = verifyAuth($i); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    $newRole = $i['role']; // 'client' or 'partner'
+    if (!in_array($newRole, ['client', 'partner'])) sendJson('error', 'Invalid Role');
+    $pdo->prepare("UPDATE users SET role = ? WHERE id = ?")->execute([$newRole, (int)$i['client_id']]);
+    sendJson('success', 'Role Updated');
+}
+
+function handleAssignClientToPartner($pdo, $i) {
+    $user = verifyAuth($i); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensurePartnerSchema($pdo);
+    $partnerId = (int)$i['partner_id'];
+    $clientId = (int)$i['client_id'];
+    
+    if ($i['action_type'] === 'remove') {
+        $pdo->prepare("DELETE FROM partner_assignments WHERE partner_id=? AND client_id=?")->execute([$partnerId, $clientId]);
+        sendJson('success', 'Assignment Removed');
+    } else {
+        // Add (Ignore duplicates via REPLACE or try/catch unique)
+        try {
+            $pdo->prepare("INSERT INTO partner_assignments (partner_id, client_id) VALUES (?, ?)")->execute([$partnerId, $clientId]);
+            sendJson('success', 'Client Assigned');
+        } catch (Exception $e) {
+            sendJson('success', 'Already Assigned');
+        }
+    }
 }
 
 function handleSendOnboardingLink($pdo, $input) { verifyAuth($input); sendInvite($pdo, $input['email']); sendJson('success', 'Sent'); }

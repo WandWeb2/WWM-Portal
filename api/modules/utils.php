@@ -1,5 +1,6 @@
 <?php
 // /api/modules/utils.php
+// Version: 29.0 - Added Partner Schema
 
 function getDBConnection($secrets) {
     $dsn = "mysql:host={$secrets['DB_HOST']};dbname={$secrets['DB_NAME']};charset=utf8mb4";
@@ -11,7 +12,6 @@ function getDBConnection($secrets) {
 
 function sendJson($s, $m, $d = []) { 
     $r = array_merge(["status" => $s, "message" => $m], $d); 
-    // Clear buffer before sending to ensure clean JSON
     if (ob_get_length()) ob_clean(); 
     echo json_encode($r); 
     exit(); 
@@ -41,6 +41,24 @@ function ensureUserSchema($pdo) {
         position VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
+}
+
+// === NEW: PARTNER SCHEMA ===
+function ensurePartnerSchema($pdo) {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS partner_assignments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        partner_id INT NOT NULL,
+        client_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(partner_id, client_id)
+    )");
+}
+
+function normalizePhone($phone) {
+    $clean = preg_replace('/[^0-9]/', '', $phone);
+    if (empty($clean)) return null;
+    if (substr($clean, 0, 2) === '04' && strlen($clean) === 10) return '61' . substr($clean, 1);
+    return $clean;
 }
 
 function stripeRequest($secrets, $method, $endpoint, $data = []) {
@@ -80,14 +98,11 @@ function sendInvite($pdo, $email) {
     return mail($email, "Your New Portal Account - Wandering Webmaster", $html, $headers);
 }
 
-// === SAFE WEBSITE CONTEXT FETCHER ===
 function fetchWandWebContext() {
     $content = "Here is the latest knowledge base from WandWeb.co:\n";
-    
     try {
         $context = stream_context_create(['http' => ['timeout' => 2]]);
         $rssContent = @file_get_contents('https://wandweb.co/feed/', false, $context);
-        
         if ($rssContent) {
             $rss = @simplexml_load_string($rssContent);
             if ($rss) {
@@ -98,14 +113,23 @@ function fetchWandWebContext() {
                 }
             }
         }
-    } catch (Exception $e) {
-        $content .= "(Blog feed momentarily unavailable)\n";
-    }
-    
-    $content .= "\nCORE PAGES:\n";
-    $content .= "- Services: https://wandweb.co/services\n";
-    $content .= "- Contact: https://wandweb.co/contact\n";
-    
+    } catch (Exception $e) { $content .= "(Blog feed momentarily unavailable)\n"; }
+    $content .= "\nCORE PAGES:\n- Services: https://wandweb.co/services\n- Contact: https://wandweb.co/contact\n";
     return $content;
+}
+
+// === NOTIFICATION HELPER ===
+function createNotification($pdo, $userId, $message) {
+    if (!$userId) return;
+    $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)")->execute([$userId, $message]);
+}
+
+function notifyPartnerIfAssigned($pdo, $clientId, $message) {
+    $stmt = $pdo->prepare("SELECT partner_id FROM partner_assignments WHERE client_id = ?");
+    $stmt->execute([$clientId]);
+    $partner = $stmt->fetch();
+    if ($partner) {
+        createNotification($pdo, $partner['partner_id'], "[Partner Alert] " . $message);
+    }
 }
 ?>

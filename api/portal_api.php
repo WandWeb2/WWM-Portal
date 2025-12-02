@@ -105,6 +105,10 @@ try {
         case 'get_client_details': handleGetClientDetails($pdo, $input, $secrets); break;
         case 'create_client': handleCreateClient($pdo, $input, $secrets); break;
         case 'update_client': handleUpdateClient($pdo, $input, $secrets); break;
+
+        case 'update_user_role': handleUpdateUserRole($pdo, $input); break; // NEW
+        case 'assign_client_partner': handleAssignClientToPartner($pdo, $input); break; // NEW
+
         case 'send_onboarding_link': handleSendOnboardingLink($pdo, $input); break;
         case 'submit_onboarding': handleSubmitOnboarding($pdo, $input, $secrets); break;
         case 'import_crm_clients': handleImportCRMClients($pdo, $input, $secrets); break;
