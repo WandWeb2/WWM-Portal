@@ -168,23 +168,9 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
         if (res.status === 'success') { onUpdate(); onClose(); } else alert(res.message);
     };
 
-    if (!details && loading) return <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"><div className="bg-white p-8 rounded-xl"><Icons.Loader/></div></div>;
-
-    const c = details?.client || client;
-    const invs = details?.invoices || [];
-    const subs = details?.subscriptions || [];
-    const projs = details?.projects || [];
-    const managed = details?.managed_clients || []; // New
-
-    // Fetch all clients if this user is a partner (for the dropdown) - runs every time but only fetches if partner
-    React.useEffect(() => {
-        if (details && c.role === 'partner') {
-            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
-                .then(res => setAllClients(res.clients || []));
-        }
-    }, [token, details, c.role]);
-
+    // Always declare handlers before conditional return
     const handlePromote = async () => {
+        const c = details?.client || client;
         const newRole = c.role === 'partner' ? 'client' : 'partner';
         if (confirm(`Change role to ${newRole.toUpperCase()}?`)) {
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_user_role', token, client_id: client.id, role: newRole }) });
@@ -196,7 +182,6 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
         if (!targetId) return;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_client_partner', token, partner_id: client.id, client_id: targetId }) });
         if (res.status === 'success') {
-            // reload details
             window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) }).then(res => setDetails(res));
         }
     };
@@ -207,6 +192,23 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
              window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) }).then(res => setDetails(res));
         }
     };
+
+    // Fetch all clients unconditionally - the component always has this useEffect
+    React.useEffect(() => {
+        const c = details?.client || client;
+        if (details && c.role === 'partner') {
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
+                .then(res => setAllClients(res.clients || []));
+        }
+    }, [token, details, client]);
+
+    if (!details && loading) return <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"><div className="bg-white p-8 rounded-xl"><Icons.Loader/></div></div>;
+
+    const c = details?.client || client;
+    const invs = details?.invoices || [];
+    const subs = details?.subscriptions || [];
+    const projs = details?.projects || [];
+    const managed = details?.managed_clients || [];
 
     return (
         <div className="fixed inset-0 bg-[#2c3259]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
