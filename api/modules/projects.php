@@ -4,8 +4,11 @@
 
 function ensureProjectSchema($pdo) {
     // Create projects and dependent tables if missing. Call from handlers.
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    $autoIncrement = ($driver === 'sqlite') ? 'AUTOINCREMENT' : 'AUTO_INCREMENT';
+    
     $pdo->exec("CREATE TABLE IF NOT EXISTS projects (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id INTEGER PRIMARY KEY $autoIncrement,
         user_id INT,
         title VARCHAR(255),
         description TEXT,
@@ -15,7 +18,7 @@ function ensureProjectSchema($pdo) {
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS tasks (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id INTEGER PRIMARY KEY $autoIncrement,
         project_id INT,
         title VARCHAR(255),
         is_complete TINYINT DEFAULT 0,
@@ -23,7 +26,7 @@ function ensureProjectSchema($pdo) {
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS comments (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id INTEGER PRIMARY KEY $autoIncrement,
         project_id INT,
         user_id INT,
         message TEXT,
@@ -33,7 +36,7 @@ function ensureProjectSchema($pdo) {
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id INTEGER PRIMARY KEY $autoIncrement,
         client_id INT,
         uploader_id INT,
         filename VARCHAR(255),
@@ -65,7 +68,13 @@ function handleGetProjects($pdo, $i) {
         $s = $pdo->query(
             "SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') AS client_name
              FROM projects p LEFT JOIN users u ON p.user_id = u.id
-             ORDER BY FIELD(p.status, 'active','onboarding','stalled','complete','archived') ASC, p.created_at ASC"
+             ORDER BY CASE p.status 
+                WHEN 'active' THEN 1 
+                WHEN 'onboarding' THEN 2 
+                WHEN 'stalled' THEN 3 
+                WHEN 'complete' THEN 4 
+                WHEN 'archived' THEN 5 
+                ELSE 6 END ASC, p.created_at ASC"
         );
     } elseif ($u['role'] === 'partner') {
         ensurePartnerSchema($pdo);
@@ -73,7 +82,13 @@ function handleGetProjects($pdo, $i) {
                 FROM projects p
                 LEFT JOIN users u ON p.user_id = u.id
                 WHERE p.user_id = ? OR p.user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id = ?)
-                ORDER BY FIELD(p.status, 'active','onboarding','stalled','complete','archived') ASC, p.created_at ASC";
+                ORDER BY CASE p.status 
+                    WHEN 'active' THEN 1 
+                    WHEN 'onboarding' THEN 2 
+                    WHEN 'stalled' THEN 3 
+                    WHEN 'complete' THEN 4 
+                    WHEN 'archived' THEN 5 
+                    ELSE 6 END ASC, p.created_at ASC";
         $s = $pdo->prepare($sql);
         $s->execute([$u['uid'], $u['uid']]);
     } else {

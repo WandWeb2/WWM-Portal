@@ -3,9 +3,13 @@
 // Version: 29.0 - Partner Access Added
 
 function ensureSupportSchema($pdo) {
-    // 1. Create Tables (Complete Schema)
+    // 1. Create Tables (Complete Schema) - SQLite/MySQL compatible
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    $autoIncrement = ($driver === 'sqlite') ? 'AUTOINCREMENT' : 'AUTO_INCREMENT';
+    $onUpdate = ($driver === 'sqlite') ? '' : 'ON UPDATE CURRENT_TIMESTAMP';
+    
     $pdo->exec("CREATE TABLE IF NOT EXISTS tickets (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id INTEGER PRIMARY KEY $autoIncrement,
         user_id INT,
         project_id INT DEFAULT NULL,
         subject VARCHAR(255),
@@ -13,11 +17,11 @@ function ensureSupportSchema($pdo) {
         priority VARCHAR(20) DEFAULT 'normal',
         is_billable TINYINT DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP $onUpdate
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS ticket_messages (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id INTEGER PRIMARY KEY $autoIncrement,
         ticket_id INT,
         sender_id INT DEFAULT 0,
         message TEXT,
@@ -40,7 +44,7 @@ function handleGetTickets($pdo, $i) {
     // Ordering: 1) status priority (open, waiting_client, closed),
     //           2) ticket urgency (urgent, high, normal, low),
     //           3) oldest first by created_at
-    $orderClause = "ORDER BY FIELD(t.status, 'open','waiting_client','closed') ASC, FIELD(t.priority, 'urgent','high','normal','low') ASC, t.created_at ASC";
+    $orderClause = "ORDER BY CASE t.status WHEN 'open' THEN 1 WHEN 'waiting_client' THEN 2 WHEN 'closed' THEN 3 ELSE 4 END ASC, CASE t.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, t.created_at ASC";
 
     $baseSelect = "SELECT t.*, u.full_name as client_name, p.title as project_title, (SELECT message FROM ticket_messages WHERE ticket_id = t.id ORDER BY id DESC LIMIT 1) as last_message FROM tickets t LEFT JOIN users u ON t.user_id = u.id LEFT JOIN projects p ON t.project_id = p.id";
 
@@ -125,27 +129,6 @@ function handleReplyTicket($pdo, $i) {
 
 function handleUpdateTicketStatus($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$i['status'], (int)$i['ticket_id']]); sendJson('success', 'Status Updated'); }
 
-function handleAI($i, $s) {
-    // ... (Existing AI Logic) ...
-    $user = verifyAuth($i);
-    if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'AI', ['text' => 'Config Error: API Key missing.']);
-    // ... (Abbreviated for safety, use existing function logic here) ...
-    // Note: I am not changing AI logic in this specific step, reusing existing block is fine.
-    // For completeness in this response, I'll stub it or you can keep the previous version.
-    // Let's assume you keep the previous handleAI as is, or I can paste it if you need.
-    // Pasting brief version:
-    $model = "gemini-2.0-flash";
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=" . $s['GEMINI_API_KEY'];
-    $websiteContext = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Website data unavailable.";
-    $dashboardContext = isset($i['data_context']) ? json_encode($i['data_context']) : "No active dashboard data.";
-    $basePrompt = "You are the WandWeb AI (First Mate). CONTEXT: $dashboardContext KB: $websiteContext. 3. If problem, append [ACTION:OPEN_TICKET]";
-    $systemPrompt = $basePrompt . ($user['role'] === 'admin' ? " ADMIN." : " CLIENT.");
-    $fullPrompt = $systemPrompt . "\n\nUSER: " . $i['prompt'];
-    $ch = curl_init($url); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["contents" => [["parts" => [["text" => $fullPrompt]]]]])); curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    $response = curl_exec($ch); curl_close($ch); $d = json_decode($response, true);
-    sendJson('success', 'AI', ['text' => $d['candidates'][0]['content']['parts'][0]['text'] ?? 'System offline.']);
-}
-
 function handleSuggestSolution($i, $s) {
     if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'Suggestion', ['text' => null]);
     $context = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "";
@@ -181,4 +164,6 @@ function handleCreateTicketFromInsight($pdo, $i) {
 
     sendJson('success', 'Thread Started', ['ticket_id' => $tid]);
 }
+
+?>
 ?>

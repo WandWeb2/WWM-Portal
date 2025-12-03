@@ -3,8 +3,13 @@
 // Version: 29.0 - Added Partner Schema
 
 function getDBConnection($secrets) {
-    $dsn = "mysql:host={$secrets['DB_HOST']};dbname={$secrets['DB_NAME']};charset=utf8mb4";
-    return new PDO($dsn, $secrets['DB_USER'], $secrets['DB_PASS'], [
+    // Support both explicit DSN or legacy DB_HOST/DB_NAME format
+    if (!empty($secrets['DB_DSN'])) {
+        $dsn = $secrets['DB_DSN'];
+    } else {
+        $dsn = "mysql:host={$secrets['DB_HOST']};dbname={$secrets['DB_NAME']};charset=utf8mb4";
+    }
+    return new PDO($dsn, $secrets['DB_USER'] ?? '', $secrets['DB_PASS'] ?? '', [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, 
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
     ]);

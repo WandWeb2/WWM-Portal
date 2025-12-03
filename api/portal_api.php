@@ -29,7 +29,12 @@ register_shutdown_function(function() {
 
 try {
     // 4. LOAD CONFIG
-    $possible_paths = [__DIR__ . '/../../private/secrets.php', $_SERVER['DOCUMENT_ROOT'] . '/../private/secrets.php'];
+    $possible_paths = [
+        __DIR__ . '/../private/secrets.php',
+        __DIR__ . '/../../private/secrets.php', 
+        $_SERVER['DOCUMENT_ROOT'] . '/../private/secrets.php',
+        '/workspaces/WWM-Portal/private/secrets.php'
+    ];
     $secrets_path = null;
     foreach ($possible_paths as $path) { if (file_exists($path)) { $secrets_path = $path; break; } }
     if (!$secrets_path) throw new Exception('Configuration missing (secrets.php).');
