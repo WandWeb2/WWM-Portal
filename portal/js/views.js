@@ -580,13 +580,64 @@ window.ServicesView = ({ token, role }) => {
 };
 
 window.AdminDashboard = ({ token, setView }) => {
-    const [stats, setStats] = React.useState({}); const [projects, setProjects] = React.useState([]); const [invoices, setInvoices] = React.useState([]);
+    const [stats, setStats] = React.useState({}); 
+    const [projects, setProjects] = React.useState([]); 
+    const [invoices, setInvoices] = React.useState([]);
+    
     React.useEffect(() => { 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_admin_dashboard', token }) }).then(r => r.status==='success' && setStats(r.stats||{}));
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }).then(r => r.status==='success' && setProjects(r.projects||[]));
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_billing_overview', token }) }).then(r => r.status==='success' && setInvoices(r.invoices||[]));
     }, [token]);
-    return (<div className="space-y-8 animate-fade-in"><window.FirstMate stats={stats} projects={projects} token={token} role="admin" /><div className="grid grid-cols-1 md:grid-cols-3 gap-6">{['Available','Incoming','Reserved'].map((l,i)=>(<div key={l} className="bg-white p-6 rounded-xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase">{l}</p><h3 className="text-3xl font-bold text-[#2c3259]">{i===0?stats.stripe_available:i===1?stats.stripe_incoming:stats.stripe_reserved}</h3></div>))}</div><div className="grid grid-cols-1 lg:grid-cols-2 gap-8"><div className="bg-white rounded-xl border p-6"><h3 className="font-bold text-lg mb-4">Projects</h3>{projects.slice(0,5).map(p=><div key={p.id} className="flex justify-between py-2 border-b"><span>{p.title}</span><span className={`text-xs px-2 py-1 rounded ${p.health_score>80?'bg-green-100':'bg-red-100'}`}>{p.status}</span></div>)}</div><div className="bg-white rounded-xl border p-6"><h3 className="font-bold text-lg mb-4">Invoices</h3>{invoices.slice(0,5).map(i=><div key={i.id} className="flex justify-between py-2 border-b"><span>{i.client_name}</span><span className="font-bold">${i.amount}</span></div>)}</div></div></div>);
+
+    const handleNav = (view, id) => {
+        localStorage.setItem('pending_nav', JSON.stringify({ view, target_id: id }));
+        window.dispatchEvent(new CustomEvent('switch_view', { detail: view }));
+    };
+
+    // Filters
+    const activeProjects = projects.filter(p => p.status !== 'archived' && p.status !== 'complete').slice(0, 5);
+    const openInvoices = invoices.filter(i => i.status !== 'paid' && i.status !== 'void').slice(0, 5);
+
+    return (
+        <div className="space-y-8 animate-fade-in">
+            <window.FirstMate stats={stats} projects={projects} token={token} role="admin" />
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {['Available','Incoming','Reserved'].map((l,i)=>(<div key={l} className="bg-white p-6 rounded-xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase">{l}</p><h3 className="text-3xl font-bold text-[#2c3259]">{i===0?stats.stripe_available:i===1?stats.stripe_incoming:stats.stripe_reserved}</h3></div>))}
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Active Projects Widget */}
+                <div className="bg-white rounded-xl border p-6 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg text-[#2c3259]">Active Projects</h3>
+                        <button onClick={()=>setView('projects')} className="text-xs font-bold text-blue-600 hover:underline">View All</button>
+                    </div>
+                    {activeProjects.length === 0 ? <p className="text-slate-400 text-xs">No active projects.</p> : activeProjects.map(p=>(
+                        <div key={p.id} onClick={()=>handleNav('projects', p.id)} className="flex justify-between py-3 border-b last:border-0 cursor-pointer hover:bg-slate-50 transition-colors group">
+                            <span className="font-medium text-slate-700 group-hover:text-[#2493a2]">{p.title}</span>
+                            <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${p.health_score>80?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{p.status}</span>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Open Invoices Widget */}
+                <div className="bg-white rounded-xl border p-6 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-lg text-[#2c3259]">Open Invoices</h3>
+                        <button onClick={()=>setView('billing')} className="text-xs font-bold text-blue-600 hover:underline">View All</button>
+                    </div>
+                    {openInvoices.length === 0 ? <p className="text-slate-400 text-xs">No open invoices.</p> : openInvoices.map(i=>(
+                        <div key={i.id} onClick={()=>setView('billing')} className="flex justify-between py-3 border-b last:border-0 cursor-pointer hover:bg-slate-50 transition-colors group">
+                            <span className="font-medium text-slate-700 group-hover:text-[#2493a2]">{i.client_name}</span>
+                            <span className="font-bold font-mono text-slate-800">${i.amount}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 window.LoginScreen = ({ setSession }) => {
@@ -745,6 +796,7 @@ window.SupportView = ({ token, role }) => {
     const [activeTicket, setActiveTicket] = React.useState(null);
     const [showCreate, setShowCreate] = React.useState(false);
     const [loading, setLoading] = React.useState(true);
+    const [showClosed, setShowClosed] = React.useState(false); // Default: Hide Closed
     const isAdmin = role === 'admin';
 
     const fetchTickets = () => {
@@ -755,7 +807,7 @@ window.SupportView = ({ token, role }) => {
 
     React.useEffect(() => { fetchTickets(); }, [token]);
 
-    // Deep Link Handler: Check localStorage for pending navigation
+    // Deep Link Handler
     React.useEffect(() => {
         if (tickets.length === 0) return; 
         const pending = localStorage.getItem('pending_nav');
@@ -763,34 +815,39 @@ window.SupportView = ({ token, role }) => {
             const nav = JSON.parse(pending);
             if(nav.view === 'support' && nav.target_id) {
                 const target = tickets.find(t => t.id == nav.target_id);
-                if(target) {
-                    setActiveTicket(target);
-                    localStorage.removeItem('pending_nav');
-                }
+                if(target) { setActiveTicket(target); localStorage.removeItem('pending_nav'); }
             }
         }
     }, [tickets]);
 
     if (loading) return <div className="p-8 text-center"><Icons.Loader/></div>;
 
+    // Filter Logic
+    const visibleTickets = tickets.filter(t => showClosed ? true : t.status !== 'closed');
+
     return (
         <div className="flex flex-col h-[calc(100vh-140px)] animate-fade-in">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold text-[#2c3259]">The Bridge (Support)</h2>
-                <button onClick={()=>setShowCreate(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold flex items-center gap-2">
-                    <Icons.Plus size={16}/> New Ticket
-                </button>
+                <div className="flex gap-2">
+                    <button onClick={()=>setShowClosed(!showClosed)} className={`px-3 py-2 rounded text-xs font-bold border transition-colors ${showClosed ? 'bg-[#dba000] text-white border-[#dba000]' : 'bg-white text-slate-500 border-slate-200'}`}>
+                        {showClosed ? 'Hide Closed' : 'View Closed'}
+                    </button>
+                    <button onClick={()=>setShowCreate(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold flex items-center gap-2 text-sm">
+                        <Icons.Plus size={16}/> New Ticket
+                    </button>
+                </div>
             </div>
 
             <div className="flex flex-1 gap-6 overflow-hidden">
                 {/* LEFT: TICKET LIST */}
                 <div className="w-1/3 bg-white rounded-xl border shadow-sm overflow-y-auto">
-                    {tickets.length === 0 ? <div className="p-6 text-slate-400 text-center text-sm">No active tickets.</div> : 
-                    tickets.map(t => (
+                    {visibleTickets.length === 0 ? <div className="p-6 text-slate-400 text-center text-sm">{showClosed ? "No tickets found." : "No active tickets. Check 'View Closed'."}</div> : 
+                    visibleTickets.map(t => (
                         <div key={t.id} onClick={()=>setActiveTicket(t)} 
-                             className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-colors ${activeTicket?.id === t.id ? 'bg-blue-50 border-l-4 border-l-[#2493a2]' : ''}`}>
+                             className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-colors ${activeTicket?.id === t.id ? 'bg-blue-50 border-l-4 border-l-[#2493a2]' : ''} ${t.status==='closed' ? 'opacity-60 bg-slate-50' : ''}`}>
                             <div className="flex justify-between items-start mb-1">
-                                <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold ${t.status==='open'?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}`}>{t.status}</span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold ${t.status==='open'?'bg-green-100 text-green-700':(t.status==='closed'?'bg-slate-200 text-slate-500':'bg-orange-100 text-orange-700')}`}>{t.status}</span>
                                 <span className="text-[10px] text-slate-400">{new Date(t.created_at).toLocaleDateString()}</span>
                             </div>
                             <h4 className="font-bold text-slate-800 text-sm mb-1 truncate">{t.subject}</h4>
@@ -1034,15 +1091,17 @@ const CreateTicketModal = ({ token, onClose }) => {
     const Icons = window.Icons;
     const [subject, setSubject] = React.useState("");
     const [suggestion, setSuggestion] = React.useState(null);
-    const [clients, setClients] = React.useState([]); // List of clients for Admin selector
-    const [selectedClient, setSelectedClient] = React.useState(""); // Target client ID
+    const [clients, setClients] = React.useState([]); 
+    const [selectedClient, setSelectedClient] = React.useState(null);
     const [isAdmin, setIsAdmin] = React.useState(false);
+    
+    // Search State
+    const [searchTerm, setSearchTerm] = React.useState("");
+    const [isSearching, setIsSearching] = React.useState(false);
 
-    // 1. Check Role & Fetch Clients if Admin
+    // 1. Check Role & Fetch Clients
     React.useEffect(() => {
         const checkRole = async () => {
-            // We deduce role from whether we can fetch clients. 
-            // Alternatively, pass 'role' as prop. But for now, try fetch.
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
             if (res.status === 'success' && res.clients) {
                 setClients(res.clients);
@@ -1052,13 +1111,12 @@ const CreateTicketModal = ({ token, onClose }) => {
         checkRole();
     }, [token]);
 
-    // Smart Suggestion Debounce
+    // Smart Suggestion
     React.useEffect(() => {
         const timer = setTimeout(async () => {
             if (subject.length > 10) {
                 const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'suggest_solution', token, subject }) });
-                if (res.status === 'success' && res.match) setSuggestion(res.text);
-                else setSuggestion(null);
+                if (res.status === 'success' && res.match) setSuggestion(res.text); else setSuggestion(null);
             }
         }, 1000);
         return () => clearTimeout(timer);
@@ -1066,61 +1124,77 @@ const CreateTicketModal = ({ token, onClose }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const f = new FormData(e.target);
+        if (isAdmin && !selectedClient) return alert("Please select a client.");
         
+        const f = new FormData(e.target);
         const payload = { 
-            action: 'create_ticket', 
-            token, 
+            action: 'create_ticket', token, 
             subject: f.get('subject'), 
             message: f.get('message'), 
             priority: f.get('priority') 
         };
-
-        // If Admin selected a client, inject it
-        if (isAdmin && selectedClient) {
-            payload.target_client_id = selectedClient;
-        }
+        if (isAdmin && selectedClient) payload.target_client_id = selectedClient.id;
 
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
         if (res.status === 'success') onClose(); else alert(res.message);
     };
 
+    // Filter Logic
+    const filteredClients = clients.filter(c => 
+        (c.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (c.business_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, 5);
+
+    const handleSelectClient = (c) => {
+        setSelectedClient(c);
+        setSearchTerm(c.full_name);
+        setIsSearching(false);
+    };
+
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg relative overflow-hidden animate-fade-in">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg relative overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
                 <div className="p-6 border-b bg-[#2c3259] text-white flex justify-between items-center">
                     <h3 className="font-bold text-lg">Open New Ticket</h3>
                     <button onClick={onClose}><Icons.Close/></button>
                 </div>
                 
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    {/* ADMIN: Client Selector */}
+                <form onSubmit={handleSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto">
+                    {/* ADMIN: SMART CLIENT SELECTOR */}
                     {isAdmin && (
-                        <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Opening Ticket For:</label>
-                            <select 
-                                className="w-full p-2 border rounded text-sm" 
-                                value={selectedClient} 
-                                onChange={e => setSelectedClient(e.target.value)}
-                            >
-                                <option value="">Myself (Internal)</option>
-                                {clients.map(c => (
-                                    <option key={c.id} value={c.id}>{c.full_name} ({c.business_name})</option>
-                                ))}
-                            </select>
+                        <div className="relative">
+                            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Opening Ticket For</label>
+                            <div className="relative">
+                                <input 
+                                    type="text" 
+                                    className={`w-full p-3 pl-9 border rounded-lg ${selectedClient ? 'bg-green-50 border-green-300 text-green-800 font-bold' : ''}`}
+                                    placeholder="Type to search client..."
+                                    value={searchTerm}
+                                    onChange={(e) => { setSearchTerm(e.target.value); setSelectedClient(null); setIsSearching(true); }}
+                                    onFocus={() => setIsSearching(true)}
+                                    required
+                                />
+                                <div className="absolute left-3 top-3.5 text-slate-400"><Icons.Search size={16}/></div>
+                                {selectedClient && <div className="absolute right-3 top-3.5 text-green-600"><Icons.Check size={16}/></div>}
+                            </div>
+                            
+                            {isSearching && searchTerm && !selectedClient && (
+                                <div className="absolute z-50 w-full bg-white border rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
+                                    {filteredClients.map(c => (
+                                        <div key={c.id} onClick={() => handleSelectClient(c)} className="p-3 border-b last:border-0 hover:bg-slate-50 cursor-pointer">
+                                            <div className="font-bold text-sm text-[#2c3259]">{c.full_name}</div>
+                                            <div className="text-xs text-slate-500">{c.business_name || 'No Business Name'}</div>
+                                        </div>
+                                    ))}
+                                    {filteredClients.length === 0 && <div className="p-3 text-xs text-slate-400 italic">No clients found.</div>}
+                                </div>
+                            )}
                         </div>
                     )}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Subject</label>
-                        <input 
-                            name="subject" 
-                            value={subject}
-                            onChange={e=>setSubject(e.target.value)}
-                            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-[#2493a2] outline-none" 
-                            placeholder="Briefly describe the issue..." 
-                            required 
-                        />
+                        <input name="subject" value={subject} onChange={e=>setSubject(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-[#2493a2] outline-none" placeholder="Briefly describe the issue..." required />
                     </div>
 
                     {suggestion && (
@@ -1134,9 +1208,9 @@ const CreateTicketModal = ({ token, onClose }) => {
                         <div>
                             <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Priority</label>
                             <select name="priority" className="w-full p-3 border rounded-lg">
-                                <option value="low">Low (General)</option>
+                                <option value="low">Low</option>
                                 <option value="normal">Normal</option>
-                                <option value="high">High (Urgent)</option>
+                                <option value="high">High</option>
                             </select>
                         </div>
                     </div>
@@ -1147,8 +1221,8 @@ const CreateTicketModal = ({ token, onClose }) => {
                     </div>
 
                     <div className="pt-2">
-                        <button className="w-full bg-[#2493a2] hover:bg-[#1e7e8b] text-white p-3 rounded-lg font-bold shadow-lg transition-colors">
-                            {isAdmin && selectedClient ? "Create Ticket for Client" : "Submit Ticket"}
+                        <button className="w-full bg-[#2c3259] hover:bg-[#1e7e8b] text-white p-3 rounded-lg font-bold shadow-lg transition-colors">
+                            {isAdmin && selectedClient ? `Submit for ${selectedClient.full_name}` : "Submit Ticket"}
                         </button>
                     </div>
                 </form>

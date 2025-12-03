@@ -274,7 +274,7 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin' }) => {
                         </div>
                         <div>
                             <div className={`flex items-center gap-2 mb-1 ${accentColor} font-bold text-xs tracking-widest uppercase`}>WandWeb AI</div>
-                            <p className="text-lg font-medium font-serif italic opacity-90 leading-relaxed pr-8">"{insight}"</p>
+                            <p className="text-sm font-medium font-sans leading-relaxed pr-8 opacity-90">"{insight}"</p>
                             <p className={`text-xs ${accentColor} mt-2 font-bold uppercase tracking-wide flex items-center gap-2`}>
                                 <Icons.MessageSquare size={14}/> {processing ? "Creating Support Session..." : "Click to Discuss / Escalate"}
                             </p>
