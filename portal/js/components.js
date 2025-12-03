@@ -314,3 +314,30 @@ window.NotificationBell = ({ token }) => {
         </div>
     );
 };
+
+// PORTAL NOTICE: small dismissible announcement stored in localStorage
+window.PortalNotice = ({ storageKey = 'portal_notice_dismissed', message = 'New: AI Assistant can open support tickets for you. Click to learn more.' }) => {
+    const [visible, setVisible] = React.useState(() => !localStorage.getItem(storageKey));
+
+    const dismiss = () => {
+        localStorage.setItem(storageKey, '1');
+        setVisible(false);
+    };
+
+    if (!visible) return null;
+
+    return (
+        <div className="fixed right-4 bottom-6 z-50 max-w-md w-full bg-white border border-slate-200 rounded-lg shadow-lg p-4 flex items-start gap-3">
+            <div className="flex-shrink-0 mt-0.5">
+                <window.Icons.Sparkles size={22} />
+            </div>
+            <div className="flex-1">
+                <div className="text-sm text-slate-800 font-medium">Portal Notice</div>
+                <div className="text-xs text-slate-600 mt-1">{message} <button onClick={() => { window.dispatchEvent(new CustomEvent('switch_view', { detail: 'support' })); }} className="ml-2 text-[#2493a2] font-bold text-xs">Discuss</button></div>
+            </div>
+            <div className="flex-shrink-0">
+                <button onClick={dismiss} className="text-slate-400 hover:text-slate-600"> <window.Icons.Close /> </button>
+            </div>
+        </div>
+    );
+};

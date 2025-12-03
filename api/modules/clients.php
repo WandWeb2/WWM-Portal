@@ -146,8 +146,15 @@ function handleAI($i, $s) {
     
     $d = json_decode($response, true);
     $text = $d['candidates'][0]['content']['parts'][0]['text'] ?? 'System offline.';
-    
-    sendJson('success', 'AI', ['text' => $text]);
+
+    // Detect actionable ticket tag appended by the Executive Assistant persona.
+    if (stripos($text, '[ACTION:OPEN_TICKET]') !== false) {
+        $clean = trim(str_ireplace('[ACTION:OPEN_TICKET]', '', $text));
+        // Return flag for frontend to create a ticket via the dedicated endpoint
+        sendJson('success', 'AI', ['text' => $clean, 'open_ticket' => true, 'insight' => $clean]);
+    } else {
+        sendJson('success', 'AI', ['text' => $text]);
+    }
 }
 
 // ... (Keep handleGetAdminDashboard, handleImportCRMClients, handleImportStripeClients, getGoogleAccessToken) ...

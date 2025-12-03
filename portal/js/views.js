@@ -556,32 +556,48 @@ window.BillingView = ({ token, role }) => { const Icons = window.Icons; const [d
 
 window.ProjectsView = ({ token, role, currentUserId }) => {
     const Icons = window.Icons;
-    const [projects, setProjects] = React.useState([]); 
+    const [projects, setProjects] = React.useState([]);
     const [active, setActive] = React.useState(null);
-    
+    const [loading, setLoading] = React.useState(true);
+    const [showStart, setShowStart] = React.useState(false);
+    const [newTitle, setNewTitle] = React.useState('');
+    const [newClient, setNewClient] = React.useState(currentUserId || null);
+    const [clients, setClients] = React.useState([]);
+    const [showArchived, setShowArchived] = React.useState(false);
+    const [search, setSearch] = React.useState('');
+
     const fetchProjects = () => {
-        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }).then(r => setProjects(r.projects||[]));
+        setLoading(true);
+        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) })
+            .then(r => setProjects(r.projects || [])).finally(()=>setLoading(false));
     };
-    
-    React.useEffect(() => { fetchProjects(); }, [token]);
-    
-    // 1. LocalStorage Deep Link Handler
+
+    const fetchClients = () => {
+        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
+            .then(r => { if (r.status === 'success') setClients(r.clients || []); });
+    };
+
+    React.useEffect(() => { fetchProjects(); fetchClients(); }, [token]);
+
+    // Deep-link consumer
     React.useEffect(() => {
-        if (projects.length === 0) return; 
+        if (projects.length === 0) return;
         const pending = localStorage.getItem('pending_nav');
-        if(pending) {
-            const nav = JSON.parse(pending);
-            if(nav.view === 'projects' && nav.target_id) {
-                const target = projects.find(p => p.id == nav.target_id);
-                if(target) {
-                    setActive(target);
-                    localStorage.removeItem('pending_nav');
+        if (pending) {
+            try {
+                const nav = JSON.parse(pending);
+                if (nav.view === 'projects' && nav.target_id) {
+                    const target = projects.find(p => p.id == nav.target_id);
+                    if (target) {
+                        setActive(target);
+                        localStorage.removeItem('pending_nav');
+                    }
                 }
-            }
+            } catch (e) { localStorage.removeItem('pending_nav'); }
         }
     }, [projects]);
-    
-    // 2. Old Event Listener to handle direct clicks on cards/buttons
+
+    // global event open
     React.useEffect(() => {
         const handleOpen = (e) => {
             const targetId = parseInt(e.detail);
@@ -591,30 +607,77 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
         window.addEventListener('open_project', handleOpen);
         return () => window.removeEventListener('open_project', handleOpen);
     }, [projects]);
-    
+
     const handleDelete = async (id) => {
-        if(!confirm('Delete this project?')) return;
+        if (!confirm('Delete this project?')) return;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_project', token, project_id: id }) });
-        if(res.status === 'success') {
-            fetchProjects();
-        } else {
-            alert('Error deleting project: ' + res.message);
-        }
+        if (res.status === 'success') fetchProjects(); else alert('Error deleting project: ' + res.message);
     };
-    
+
     const handleUpdateStatus = async (id, newStatus) => {
         const project = projects.find(p => p.id === id);
         const health_score = project?.health_score || 0;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_project_status', token, project_id: id, status: newStatus, health_score }) });
-        if(res.status === 'success') {
-            fetchProjects();
-        } else {
-            alert('Error updating project: ' + res.message);
-        }
+        if (res.status === 'success') fetchProjects(); else alert('Error updating project: ' + res.message);
     };
-    
-    if(active) return <TaskManager project={active} token={token} onClose={()=>setActive(null)} />;
-    return (<div className="grid grid-cols-1 md:grid-cols-3 gap-6">{projects.map(p=><ProjectCard key={p.id} project={p} role={role} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />)}</div>);
+
+    const handleStartProject = async (e) => {
+        e.preventDefault();
+        if (!newTitle.trim()) return alert('Enter a title');
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'create_project', token, client_id: newClient, title: newTitle }) });
+        if (res.status === 'success') { setShowStart(false); setNewTitle(''); fetchProjects(); } else alert(res.message);
+    };
+
+    const filtered = projects.filter(p => {
+        if (!showArchived && p.status === 'archived') return false;
+        if (!search) return true;
+        return (p.title || '').toLowerCase().includes(search.toLowerCase()) || (p.client_name || '').toLowerCase().includes(search.toLowerCase());
+    });
+
+    if (loading) return <div className="p-8 text-center"><Icons.Loader/></div>;
+    if (active) return <TaskManager project={active} token={token} onClose={() => { setActive(null); fetchProjects(); }} />;
+
+    return (
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    <h2 className="text-2xl font-bold text-[#2c3259]">Projects</h2>
+                    <div className="text-xs text-slate-500">{projects.length} total</div>
+                </div>
+                <div className="flex items-center gap-3">
+                    <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} className="p-2 border rounded text-sm" />
+                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} /> Show Archived</label>
+                    {role === 'admin' && <button onClick={() => setShowStart(true)} className="bg-[#2493a2] text-white px-4 py-2 rounded font-bold">Start Project</button>}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {filtered.map(p => <ProjectCard key={p.id} project={p} role={role} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />)}
+            </div>
+
+            {showStart && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white p-6 rounded-xl w-full max-w-md">
+                        <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">Start Project</h3><button onClick={() => setShowStart(false)}><Icons.Close/></button></div>
+                        <form onSubmit={handleStartProject} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Client</label>
+                                <select value={newClient || ''} onChange={e => setNewClient(e.target.value)} className="w-full p-2 border rounded">
+                                    <option value="">Select client</option>
+                                    {clients.map(c => <option key={c.id} value={c.id}>{c.full_name} ({c.email})</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">Project Title</label>
+                                <input value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full p-2 border rounded" required />
+                            </div>
+                            <div className="flex justify-end"><button className="bg-[#2c3259] text-white px-4 py-2 rounded">Create</button></div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 };
 
 window.OnboardingView = ({ token }) => { const [step, setStep] = React.useState(1); const [submitting, setSubmitting] = React.useState(false); const handleSubmit = async (e) => { e.preventDefault(); if (step < 3) { setStep(step + 1); return; } setSubmitting(true); const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); data.action = 'submit_onboarding'; data.onboarding_token = token; const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(data) }); if (res.status === 'success') { alert(res.message); window.location.href = '/portal/'; } else { alert("Error: " + res.message); setSubmitting(false); } }; return (<div className="min-h-screen bg-slate-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden border border-slate-100"><div className="bg-[#2c3259] p-6 text-center"><img src={LOGO_URL} alt="WandWeb" className="h-16 mx-auto" /><p className="text-slate-300 mt-2">Project Onboarding</p></div><form onSubmit={handleSubmit} className="p-8">{step === 1 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">G'Day! Your Details</h2><div><label className="block text-sm font-bold text-slate-600">Prefix</label><select name="prefix" className="w-full p-3 border rounded bg-slate-50"><option>Mr</option><option>Mrs</option><option>Ms</option></select></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-slate-600">First Name *</label><input name="first_name" className="w-full p-3 border rounded" required/></div><div><label className="block text-sm font-bold text-slate-600">Last Name *</label><input name="last_name" className="w-full p-3 border rounded" required/></div></div><div><label className="block text-sm font-bold text-slate-600">Email *</label><input name="email" type="email" className="w-full p-3 border rounded" required/></div><div><label className="block text-sm font-bold text-slate-600">Phone Number *</label><input name="phone" className="w-full p-3 border rounded" required/></div></div>)}{step === 2 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">Business Details</h2><div><label className="block text-sm font-bold text-slate-600">Business Name</label><input name="business_name" className="w-full p-3 border rounded"/></div><div><label className="block text-sm font-bold text-slate-600">Address</label><textarea name="address" className="w-full p-3 border rounded h-20"></textarea></div><div><label className="block text-sm font-bold text-slate-600">Position</label><input name="position" className="w-full p-3 border rounded" placeholder="Your position within the Business"/></div><div><label className="block text-sm font-bold text-slate-600">Website</label><input name="website" className="w-full p-3 border rounded" placeholder="Current URL (if any)"/></div></div>)}{step === 3 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">How can we best help you?</h2><div><label className="block text-sm font-bold text-slate-600">Project Goals</label><textarea name="goals" className="w-full p-3 border rounded h-24"></textarea></div><div><label className="block text-sm font-bold text-slate-600">Scope of Work</label><textarea name="scope" className="w-full p-3 border rounded h-24"></textarea></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-slate-600">Timeline</label><input name="timeline" className="w-full p-3 border rounded"/></div><div><label className="block text-sm font-bold text-slate-600">Budget</label><input name="budget" className="w-full p-3 border rounded"/></div></div><div><label className="block text-sm font-bold text-slate-600">Challenges</label><textarea name="challenges" className="w-full p-3 border rounded h-20"></textarea></div></div>)}<div className="mt-8 flex justify-between">{step > 1 && <button type="button" onClick={() => setStep(step - 1)} className="px-6 py-2 text-slate-600 font-bold">Back</button>}<button type="submit" disabled={submitting} className="ml-auto bg-purple-700 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-purple-800 transition-colors">{submitting ? 'Submitting...' : (step === 3 ? 'Finish & Submit' : 'Next')}</button></div></form></div></div>); };

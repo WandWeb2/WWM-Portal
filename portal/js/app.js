@@ -93,7 +93,7 @@ const App = () => {
 
     // 3. Import Dependencies (Now Guaranteed to Exist)
     const { 
-        Icons, PortalBackground, NotificationBell,
+        Icons, PortalBackground, NotificationBell, PortalNotice,
         LoginScreen, SetPasswordScreen, OnboardingView,
         AdminDashboard, ClientDashboard, 
         ProjectsView, FilesView, BillingView, ServicesView, 
@@ -163,6 +163,7 @@ const App = () => {
                 {view === 'settings' && <SettingsView token={session.token} role={session.role} />}
                 {view === 'support' && <SupportView token={session.token} role={session.role} />}
              </main>
+             {PortalNotice ? <PortalNotice /> : null}
              {PortalBackground ? <PortalBackground /> : null}
         </div>
     );

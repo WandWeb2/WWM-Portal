@@ -35,27 +35,30 @@ function ensureSupportSchema($pdo) {
 }
 
 function handleGetTickets($pdo, $i) { 
-    $u = verifyAuth($i); ensureSupportSchema($pdo); 
-    
+    $u = verifyAuth($i); ensureSupportSchema($pdo);
+
+    // Ordering: 1) status priority (open, waiting_client, closed),
+    //           2) ticket urgency (urgent, high, normal, low),
+    //           3) oldest first by created_at
+    $orderClause = "ORDER BY FIELD(t.status, 'open','waiting_client','closed') ASC, FIELD(t.priority, 'urgent','high','normal','low') ASC, t.created_at ASC";
+
+    $baseSelect = "SELECT t.*, u.full_name as client_name, p.title as project_title, (SELECT message FROM ticket_messages WHERE ticket_id = t.id ORDER BY id DESC LIMIT 1) as last_message FROM tickets t LEFT JOIN users u ON t.user_id = u.id LEFT JOIN projects p ON t.project_id = p.id";
+
     if ($u['role'] === 'admin') { 
-        $sql = "SELECT t.*, u.full_name as client_name, p.title as project_title, (SELECT message FROM ticket_messages WHERE ticket_id = t.id ORDER BY id DESC LIMIT 1) as last_message FROM tickets t LEFT JOIN users u ON t.user_id = u.id LEFT JOIN projects p ON t.project_id = p.id ORDER BY field(t.status, 'open', 'waiting_client', 'closed'), t.created_at DESC"; 
-        $stmt = $pdo->prepare($sql); 
-        $stmt->execute(); 
+        $sql = "$baseSelect $orderClause";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute();
     } elseif ($u['role'] === 'partner') {
         ensurePartnerSchema($pdo);
-        $sql = "SELECT t.*, u.full_name as client_name, p.title as project_title, (SELECT message FROM ticket_messages WHERE ticket_id = t.id ORDER BY id DESC LIMIT 1) as last_message 
-                FROM tickets t 
-                LEFT JOIN users u ON t.user_id = u.id 
-                LEFT JOIN projects p ON t.project_id = p.id 
-                WHERE t.user_id = ? OR t.user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id = ?)
-                ORDER BY t.created_at DESC";
+        $sql = "$baseSelect WHERE t.user_id = ? OR t.user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id = ?) $orderClause";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$u['uid'], $u['uid']]);
-    } else { 
-        $sql = "SELECT t.*, p.title as project_title, (SELECT message FROM ticket_messages WHERE ticket_id = t.id ORDER BY id DESC LIMIT 1) as last_message FROM tickets t LEFT JOIN projects p ON t.project_id = p.id WHERE t.user_id = ? ORDER BY t.created_at DESC"; 
-        $stmt = $pdo->prepare($sql); 
-        $stmt->execute([$u['uid']]); 
-    } 
+    } else {
+        $sql = "$baseSelect WHERE t.user_id = ? $orderClause";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$u['uid']]);
+    }
+
     sendJson('success', 'Tickets Loaded', ['tickets' => $stmt->fetchAll()]); 
 }
 
