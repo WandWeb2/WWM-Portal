@@ -1,8 +1,10 @@
 <?php
 // /api/modules/projects.php
-// Version: 29.1 - Moved table creation outside function to guarantee initialization
+// Version: 29.2 - FIX: Moved table creation into function to prevent HTTP 500 error on module load.
 
-$pdo->exec("CREATE TABLE IF NOT EXISTS projects (id INT AUTO_INCREMENT PRIMARY KEY, user_id INT, title VARCHAR(255), description TEXT, status VARCHAR(50), health_score INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+function ensureProjectSchema($pdo) {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS projects (id INT AUTO_INCREMENT PRIMARY KEY, user_id INT, title VARCHAR(255), description TEXT, status VARCHAR(50), health_score INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+}
 
 function recalcProjectHealth($pdo, $pid) {
     $r = $pdo->query("SELECT COUNT(*) as total, SUM(is_complete) as done FROM tasks WHERE project_id=" . (int)$pid)->fetch();
@@ -13,7 +15,8 @@ function recalcProjectHealth($pdo, $pid) {
 
 function handleGetProjects($pdo,$i){
     $u=verifyAuth($i);
-    // REMOVED: $pdo->exec("CREATE TABLE IF NOT EXISTS projects ...") from here
+    // Ensure table exists before querying
+    ensureProjectSchema($pdo);
     
     if($u['role']==='admin'){
         $s=$pdo->query("SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') as client_name FROM projects p LEFT JOIN users u ON p.user_id=u.id ORDER BY client_name ASC, p.created_at DESC");
