@@ -78,6 +78,7 @@ try {
         case 'get_admin_dashboard': handleGetAdminDashboard($pdo, $input, $secrets); break;
         case 'get_projects': handleGetProjects($pdo, $input); break;
         case 'create_project': handleCreateProject($pdo, $input); break;
+        case 'ai_create_project': handleAICreateProject($pdo, $input, $secrets); break; // NEW AI HANDLER
         case 'update_project_status': handleUpdateProjectStatus($pdo, $input, $secrets); break;
         case 'delete_project': handleDeleteProject($pdo, $input); break;
         case 'get_project_details': handleGetProjectDetails($pdo, $input); break;

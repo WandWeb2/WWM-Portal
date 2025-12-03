@@ -60,6 +60,82 @@ function recalcProjectHealth($pdo, $pid) {
     return $score;
 }
 
+function handleAICreateProject($pdo, $i, $s) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    if (empty($s['GEMINI_API_KEY'])) sendJson('error', 'AI Configuration Missing');
+    
+    ensureProjectSchema($pdo);
+    $clientId = (int)($i['client_id'] ?? 0);
+    if (!$clientId) sendJson('error', 'Client selection is required.');
+    
+    $notes = strip_tags($i['notes']);
+    
+    // 1. Prompt Engineering for Structured JSON
+    $sysPrompt = "You are an expert Agency Project Manager. 
+    Analyze the following project notes and generate a structured plan.
+    NOTES: $notes
+    
+    RETURN JSON ONLY. No markdown, no backticks. Structure:
+    {
+        \"title\": \"Short Professional Title\",
+        \"description\": \"2-sentence scope summary\",
+        \"tasks\": [
+            { \"title\": \"Task 1\", \"priority\": \"high\" },
+            { \"title\": \"Task 2\", \"priority\": \"normal\" }
+        ]
+    }";
+
+    // 2. Call Gemini
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . $s['GEMINI_API_KEY'];
+    $payload = json_encode(["contents" => [["parts" => [["text" => $sysPrompt]]]]]);
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    // 3. Parse & Clean
+    $data = json_decode($response, true);
+    $rawText = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    // Strip code fences if AI adds them
+    $jsonStr = preg_replace('/^```json\s*|\s*```$/', '', trim($rawText));
+    $plan = json_decode($jsonStr, true);
+    
+    if (!$plan || empty($plan['title'])) sendJson('error', 'AI Generation Failed. Please try again.');
+
+    // 4. Execute DB Transactions
+    $pdo->beginTransaction();
+    try {
+        // Insert Project
+        $stmt = $pdo->prepare("INSERT INTO projects (user_id, title, description, status, health_score) VALUES (?, ?, ?, 'active', 100)");
+        $stmt->execute([$clientId, $plan['title'], $plan['description']]);
+        $pid = $pdo->lastInsertId();
+        
+        // Insert Tasks
+        if (!empty($plan['tasks'])) {
+            $stmt = $pdo->prepare("INSERT INTO tasks (project_id, title, is_complete) VALUES (?, ?, 0)");
+            foreach ($plan['tasks'] as $task) {
+                $title = $task['title'];
+                if (isset($task['priority']) && $task['priority'] === 'high') $title = "🔥 " . $title;
+                $stmt->execute([$pid, $title]);
+            }
+        }
+        
+        // Calculate Initial Health
+        recalcProjectHealth($pdo, $pid);
+        
+        $pdo->commit();
+        sendJson('success', 'Project Generated');
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        sendJson('error', 'Database Error: ' . $e->getMessage());
+    }
+}
+
 function handleGetProjects($pdo, $i) {
     $u = verifyAuth($i);
     ensureProjectSchema($pdo);

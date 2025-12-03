@@ -557,17 +557,22 @@ window.BillingView = ({ token, role }) => { const Icons = window.Icons; const [d
 window.ProjectsView = ({ token, role, currentUserId }) => {
     const Icons = window.Icons;
     const [projects, setProjects] = React.useState([]); 
+    const [clients, setClients] = React.useState([]); // Store clients for selector
     const [active, setActive] = React.useState(null);
     const [showCreateModal, setShowCreateModal] = React.useState(false);
     const [showArchived, setShowArchived] = React.useState(false);
     
-    const fetchProjects = () => {
+    // Fetch Projects AND Clients
+    const loadData = () => {
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }).then(r => setProjects(r.projects||[]));
+        if (role === 'admin') {
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) }).then(r => setClients(r.clients||[]));
+        }
     };
     
-    React.useEffect(() => { fetchProjects(); }, [token]);
+    React.useEffect(() => { loadData(); }, [token]);
     
-    // 1. LocalStorage Deep Link Handler
+    // Deep Link Logic
     React.useEffect(() => {
         if (projects.length === 0) return; 
         const pending = localStorage.getItem('pending_nav');
@@ -575,62 +580,32 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
             const nav = JSON.parse(pending);
             if(nav.view === 'projects' && nav.target_id) {
                 const target = projects.find(p => p.id == nav.target_id);
-                if(target) {
-                    setActive(target);
-                    localStorage.removeItem('pending_nav');
-                }
+                if(target) { setActive(target); localStorage.removeItem('pending_nav'); }
             }
         }
     }, [projects]);
-    
-    // 2. Old Event Listener to handle direct clicks on cards/buttons
-    React.useEffect(() => {
-        const handleOpen = (e) => {
-            const targetId = parseInt(e.detail);
-            const target = projects.find(p => p.id === targetId);
-            if (target) setActive(target);
-        };
-        window.addEventListener('open_project', handleOpen);
-        return () => window.removeEventListener('open_project', handleOpen);
-    }, [projects]);
-    
-    const handleCreateProject = async (e) => {
-        e.preventDefault();
-        const f = new FormData(e.target);
-        const title = f.get('title');
-        const client_id = f.get('client_id');
 
-        const res = await window.safeFetch(API_URL, { 
-            method: 'POST', 
-            body: JSON.stringify({ action: 'create_project', token, title, client_id }) 
-        });
+    const handleCreateProject = async (payload) => {
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ token, ...payload }) });
         if(res.status === 'success') {
             setShowCreateModal(false);
-            fetchProjects();
+            loadData();
         } else {
-            alert('Error creating project: ' + res.message);
+            alert('Error: ' + res.message);
         }
-    }
+    };
     
     const handleDelete = async (id) => {
         if(!confirm('Delete this project?')) return;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_project', token, project_id: id }) });
-        if(res.status === 'success') {
-            fetchProjects();
-        } else {
-            alert('Error deleting project: ' + res.message);
-        }
+        if(res.status === 'success') loadData();
     };
     
     const handleUpdateStatus = async (id, newStatus) => {
         const project = projects.find(p => p.id === id);
         const health_score = newStatus === 'archived' ? 0 : project?.health_score || 0;
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_project_status', token, project_id: id, status: newStatus, health_score }) });
-        if(res.status === 'success') {
-            fetchProjects();
-        } else {
-            alert('Error updating project: ' + res.message);
-        }
+        await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_project_status', token, project_id: id, status: newStatus, health_score }) });
+        loadData();
     };
 
     const filteredProjects = projects.filter(p => showArchived ? p.status === 'archived' : p.status !== 'archived');
@@ -638,27 +613,25 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     if(active) return <TaskManager project={active} token={token} onClose={()=>setActive(null)} />;
     
     return (
-        <div className="space-y-6">
-            {/* Top Bar / Controls */}
+        <div className="space-y-6 animate-fade-in">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-[#2c3259]">Projects</h2>
                 <div className="flex gap-3">
-                    <button onClick={() => setShowArchived(!showArchived)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors border flex items-center gap-2 ${showArchived ? 'bg-[#dba000] text-white border-[#dba000] shadow' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}>
-                        <Icons.Archive size={16}/> {showArchived ? 'View Active' : 'View Archived'}
+                    <button onClick={() => setShowArchived(!showArchived)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors border flex items-center gap-2 ${showArchived ? 'bg-[#dba000] text-white border-[#dba000]' : 'bg-white text-slate-600 border-slate-300'}`}>
+                        <Icons.Archive size={16}/> {showArchived ? 'Active' : 'Archived'}
                     </button>
                     {role === 'admin' && (
                         <button onClick={() => setShowCreateModal(true)} className="bg-[#2493a2] text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shadow-md hover:bg-[#1e7e8b]">
-                            <Icons.Plus size={16}/> Start New Project
+                            <Icons.Plus size={16}/> New Project
                         </button>
                     )}
                 </div>
             </div>
 
-            {/* Project List */}
             {filteredProjects.length === 0 ? (
                 <div className="p-20 text-center border-2 border-dashed rounded-xl text-slate-400">
                     <Icons.Folder size={48} className="mx-auto mb-4"/>
-                    <p>{showArchived ? "No projects have been archived yet." : "No active projects found. Click 'Start New Project' to begin."}</p>
+                    <p>{showArchived ? "No archived projects." : "No active projects. Click 'New Project' to begin."}</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -666,19 +639,12 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
                 </div>
             )}
 
-            {/* Create Project Modal (Admin Only) */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white p-8 rounded-xl w-full max-w-md relative">
-                        <button onClick={()=>setShowCreateModal(false)} className="absolute top-4 right-4"><Icons.Close/></button>
-                        <h3 className="font-bold text-xl mb-4">Start New Project</h3>
-                        <form onSubmit={handleCreateProject} className="space-y-4">
-                            <input name="title" placeholder="Project Title *" className="w-full p-2 border rounded" required/>
-                            <input name="client_id" type="number" placeholder="Client ID (for Admin)" className="w-full p-2 border rounded"/>
-                            <button className="w-full bg-[#2493a2] text-white p-2 rounded font-bold">Create Project</button>
-                        </form>
-                    </div>
-                </div>
+                <CreateProjectModal 
+                    clients={clients} 
+                    onClose={()=>setShowCreateModal(false)} 
+                    onSubmit={handleCreateProject} 
+                />
             )}
         </div>
     );
@@ -804,6 +770,117 @@ window.SupportView = ({ token, role }) => {
     );
 };
 
+// NEW SUB-COMPONENT: Create Project Modal with AI & Client Search
+const CreateProjectModal = ({ clients, onClose, onSubmit }) => {
+    const Icons = window.Icons;
+    const [mode, setMode] = React.useState('manual'); // 'manual' or 'ai'
+    const [selectedClient, setSelectedClient] = React.useState(null);
+    const [searchTerm, setSearchTerm] = React.useState("");
+    const [isSearching, setIsSearching] = React.useState(false);
+    const [loading, setLoading] = React.useState(false);
+
+    const filteredClients = clients.filter(c => 
+        (c.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (c.business_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+    ).slice(0, 5);
+
+    const handleSelectClient = (c) => {
+        setSelectedClient(c);
+        setSearchTerm(c.full_name);
+        setIsSearching(false);
+    };
+
+    const handleFinalSubmit = async (e) => {
+        e.preventDefault();
+        if (!selectedClient) return alert("Please select a client.");
+        setLoading(true);
+        const f = new FormData(e.target);
+        if (mode === 'manual') {
+            await onSubmit({ 
+                action: 'create_project', 
+                client_id: selectedClient.id, 
+                title: f.get('title') 
+            });
+        } else {
+            await onSubmit({ 
+                action: 'ai_create_project', 
+                client_id: selectedClient.id, 
+                notes: f.get('notes') 
+            });
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+            <div className="bg-white p-0 rounded-xl w-full max-w-lg relative shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-4 bg-[#2c3259] text-white flex justify-between items-center">
+                    <h3 className="font-bold text-lg flex items-center gap-2">
+                        {mode === 'ai' ? <Icons.Sparkles className="text-[#dba000]"/> : <Icons.Folder/>}
+                        {mode === 'ai' ? 'First Mate (AI)' : 'New Project'}
+                    </h3>
+                    <button onClick={onClose}><Icons.Close/></button>
+                </div>
+                <div className="flex border-b bg-slate-50">
+                    <button onClick={()=>setMode('manual')} className={`flex-1 py-3 text-sm font-bold transition-colors ${mode==='manual' ? 'bg-white text-[#2c3259] border-t-2 border-t-[#2c3259]' : 'text-slate-400 hover:text-slate-600'}`}>Manual Setup</button>
+                    <button onClick={()=>setMode('ai')} className={`flex-1 py-3 text-sm font-bold transition-colors ${mode==='ai' ? 'bg-white text-[#2c3259] border-t-2 border-t-[#dba000]' : 'text-slate-400 hover:text-slate-600'}`}>Give to First Mate 🤖</button>
+                </div>
+
+                <form onSubmit={handleFinalSubmit} className="p-6 space-y-6 flex-1 overflow-y-auto">
+                    <div className="relative">
+                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Client</label>
+                        <div className="relative">
+                            <input 
+                                type="text" 
+                                className={`w-full p-3 pl-9 border rounded-lg ${selectedClient ? 'bg-green-50 border-green-300 text-green-800 font-bold' : ''}`}
+                                placeholder="Type to search client..."
+                                value={searchTerm}
+                                onChange={(e) => { setSearchTerm(e.target.value); setSelectedClient(null); setIsSearching(true); }}
+                                onFocus={() => setIsSearching(true)}
+                                required
+                            />
+                            <div className="absolute left-3 top-3.5 text-slate-400"><Icons.Search size={16}/></div>
+                            {selectedClient && <div className="absolute right-3 top-3.5 text-green-600"><Icons.Check size={16}/></div>}
+                        </div>
+                        {isSearching && searchTerm && !selectedClient && (
+                            <div className="absolute z-50 w-full bg-white border rounded-lg shadow-xl mt-1 max-h-48 overflow-y-auto">
+                                {filteredClients.map(c => (
+                                    <div key={c.id} onClick={() => handleSelectClient(c)} className="p-3 border-b last:border-0 hover:bg-slate-50 cursor-pointer">
+                                        <div className="font-bold text-sm text-[#2c3259]">{c.full_name}</div>
+                                        <div className="text-xs text-slate-500">{c.business_name || 'No Business Name'}</div>
+                                    </div>
+                                ))}
+                                {filteredClients.length === 0 && <div className="p-3 text-xs text-slate-400 italic">No clients found.</div>}
+                            </div>
+                        )}
+                    </div>
+
+                    {mode === 'manual' ? (
+                        <div className="animate-fade-in">
+                            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Project Title</label>
+                            <input name="title" className="w-full p-3 border rounded-lg" placeholder="e.g. Website Redesign" required />
+                        </div>
+                    ) : (
+                        <div className="space-y-4 animate-fade-in">
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+                                <p className="font-bold mb-1"><Icons.Sparkles size={14} className="inline mr-1"/> First Mate Protocol:</p>
+                                I will analyze your notes to create the Project Title, Scope Description, and an initial Task List with priorities automatically.
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Project Brief / Notes</label>
+                                <textarea name="notes" className="w-full p-3 border rounded-lg h-32 focus:ring-2 focus:ring-[#dba000] outline-none" placeholder="e.g. Need a 5-page site for a dentist. Needs booking form, gallery, and SEO setup. High priority on mobile." required></textarea>
+                            </div>
+                        </div>
+                    )}
+
+                    <button disabled={loading} className={`w-full p-4 rounded-xl font-bold text-white shadow-lg transition-all ${loading ? 'bg-slate-400' : (mode==='ai' ? 'bg-gradient-to-r from-[#2c3259] to-[#2493a2] hover:opacity-90' : 'bg-[#2c3259]')}`}>
+                        {loading ? <span className="flex items-center justify-center gap-2"><Icons.Loader className="animate-spin"/> Processing...</span> : (mode === 'ai' ? 'Generate Project Plan' : 'Create Project')}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
 const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const Icons = window.Icons;
     const [messages, setMessages] = React.useState([]);
