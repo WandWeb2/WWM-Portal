@@ -1,8 +1,9 @@
 <?php
 // /api/modules/projects.php
-// Version: 29.2 - FIX: Moved table creation into function to prevent HTTP 500 error on module load.
+// Version: 29.3 - FIX: Guaranteed table creation inside function to resolve HTTP 500 error.
 
 function ensureProjectSchema($pdo) {
+    // We create the main tables here, ensuring no code uses $pdo until it is explicitly called within a function.
     $pdo->exec("CREATE TABLE IF NOT EXISTS projects (id INT AUTO_INCREMENT PRIMARY KEY, user_id INT, title VARCHAR(255), description TEXT, status VARCHAR(50), health_score INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
 }
 
@@ -15,7 +16,7 @@ function recalcProjectHealth($pdo, $pid) {
 
 function handleGetProjects($pdo,$i){
     $u=verifyAuth($i);
-    // Ensure table exists before querying
+    // 1. Ensure table exists before querying
     ensureProjectSchema($pdo);
     
     if($u['role']==='admin'){
@@ -113,7 +114,7 @@ function handleSaveTask($pdo, $i) {
     $p = $pdo->query("SELECT title, user_id FROM projects WHERE id=$pid")->fetch();
     $msg = "New task added: $title";
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")->execute([$pid, $u['uid'], $msg]);
-    createNotification($pdo, $p['user_id'], "New Task in '{$p['title']}': $title");
+    createNotification($pdo, $p['user_id'], "New Task in '{$p['title']}': $title", 'project', $pid); // Added deep link
     
     sendJson('success', 'Saved');
 }
@@ -122,22 +123,22 @@ function handleToggleTask($pdo, $i) {
     $u = verifyAuth($i);
     $tid = (int)$i['id'];
     $done = (int)$i['is_complete'];
-    
+
     // 1. Update
     $pdo->prepare("UPDATE tasks SET is_complete = ? WHERE id = ?")->execute([$done, $tid]);
-    
+
     // 2. Recalc (Need Project ID)
     $t = $pdo->query("SELECT project_id, title FROM tasks WHERE id=$tid")->fetch();
     if ($t) {
         $pid = $t['project_id'];
         recalcProjectHealth($pdo, $pid);
-        
+
         // 3. Log
         $status = $done ? "Completed" : "Re-opened";
         $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
             ->execute([$pid, $u['uid'], "Task '{$t['title']}' marked as $status"]);
     }
-    
+
     sendJson('success', 'Updated');
 }
 
