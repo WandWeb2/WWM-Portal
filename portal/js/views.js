@@ -810,4 +810,3 @@ const CreateTicketModal = ({ token, onClose }) => {
         </div>
     );
 };
-}
