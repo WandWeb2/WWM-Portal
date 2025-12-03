@@ -41,6 +41,7 @@ try {
     require_once __DIR__ . '/modules/projects.php';
     require_once __DIR__ . '/modules/billing.php';
     require_once __DIR__ . '/modules/clients.php';
+    require_once __DIR__ . '/modules/support.php';
 
     $pdo = getDBConnection($secrets);
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -58,13 +59,13 @@ try {
         case 'mark_read': handleMarkRead($pdo, $input); break;
 
 		// Support & Ticketing
-  		case 'get_tickets': require_once __DIR__.'/modules/support.php'; handleGetTickets($pdo, $input); break;
-    	case 'get_ticket_thread': require_once __DIR__.'/modules/support.php'; handleGetTicketThread($pdo, $input); break;
-        case 'create_ticket': require_once __DIR__.'/modules/support.php'; handleCreateTicket($pdo, $input, $secrets); break;
-        case 'create_ticket_from_insight': require_once __DIR__.'/modules/support.php'; handleCreateTicketFromInsight($pdo, $input); break;
-    	case 'reply_ticket': require_once __DIR__.'/modules/support.php'; handleReplyTicket($pdo, $input); break;
-    	case 'update_ticket_status': require_once __DIR__.'/modules/support.php'; handleUpdateTicketStatus($pdo, $input); break;
-    	case 'suggest_solution': require_once __DIR__.'/modules/support.php'; handleSuggestSolution($input, $secrets); break;	
+  		case 'get_tickets': handleGetTickets($pdo, $input); break;
+    	case 'get_ticket_thread': handleGetTicketThread($pdo, $input); break;
+        case 'create_ticket': handleCreateTicket($pdo, $input, $secrets); break;
+        case 'create_ticket_from_insight': handleCreateTicketFromInsight($pdo, $input); break;
+    	case 'reply_ticket': handleReplyTicket($pdo, $input); break;
+    	case 'update_ticket_status': handleUpdateTicketStatus($pdo, $input); break;
+    	case 'suggest_solution': handleSuggestSolution($input, $secrets); break;	
 			
         // Projects
         case 'get_admin_dashboard': handleGetAdminDashboard($pdo, $input, $secrets); break;
