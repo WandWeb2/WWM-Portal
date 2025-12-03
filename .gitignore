@@ -3,4 +3,5 @@ node_modules/
 .DS_Store
 
 config.php
-secrets.js
+secrets.js/private/
+/private/
