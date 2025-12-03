@@ -125,27 +125,6 @@ function handleReplyTicket($pdo, $i) {
 
 function handleUpdateTicketStatus($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$i['status'], (int)$i['ticket_id']]); sendJson('success', 'Status Updated'); }
 
-function handleAI($i, $s) {
-    // ... (Existing AI Logic) ...
-    $user = verifyAuth($i);
-    if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'AI', ['text' => 'Config Error: API Key missing.']);
-    // ... (Abbreviated for safety, use existing function logic here) ...
-    // Note: I am not changing AI logic in this specific step, reusing existing block is fine.
-    // For completeness in this response, I'll stub it or you can keep the previous version.
-    // Let's assume you keep the previous handleAI as is, or I can paste it if you need.
-    // Pasting brief version:
-    $model = "gemini-2.0-flash";
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=" . $s['GEMINI_API_KEY'];
-    $websiteContext = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Website data unavailable.";
-    $dashboardContext = isset($i['data_context']) ? json_encode($i['data_context']) : "No active dashboard data.";
-    $basePrompt = "You are the WandWeb AI (First Mate). CONTEXT: $dashboardContext KB: $websiteContext. 3. If problem, append [ACTION:OPEN_TICKET]";
-    $systemPrompt = $basePrompt . ($user['role'] === 'admin' ? " ADMIN." : " CLIENT.");
-    $fullPrompt = $systemPrompt . "\n\nUSER: " . $i['prompt'];
-    $ch = curl_init($url); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["contents" => [["parts" => [["text" => $fullPrompt]]]]])); curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    $response = curl_exec($ch); curl_close($ch); $d = json_decode($response, true);
-    sendJson('success', 'AI', ['text' => $d['candidates'][0]['content']['parts'][0]['text'] ?? 'System offline.']);
-}
-
 function handleSuggestSolution($i, $s) {
     if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'Suggestion', ['text' => null]);
     $context = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "";
