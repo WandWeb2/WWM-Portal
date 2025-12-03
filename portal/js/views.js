@@ -565,6 +565,17 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     
     React.useEffect(() => { fetchProjects(); }, [token]);
     
+    // Listen for deep-link open_project events
+    React.useEffect(() => {
+        const handleOpen = (e) => {
+            const targetId = parseInt(e.detail);
+            const target = projects.find(p => p.id === targetId);
+            if (target) setActive(target);
+        };
+        window.addEventListener('open_project', handleOpen);
+        return () => window.removeEventListener('open_project', handleOpen);
+    }, [projects]);
+    
     const handleDelete = async (id) => {
         if(!confirm('Delete this project?')) return;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_project', token, project_id: id }) });

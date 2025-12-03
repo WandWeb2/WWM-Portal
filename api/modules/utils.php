@@ -119,11 +119,12 @@ function fetchWandWebContext() {
 }
 
 // === NOTIFICATION HELPER ===
-function createNotification($pdo, $userId, $message) {
+function createNotification($pdo, $userId, $message, $type = null, $id = 0) {
     if (!$userId) return;
     
-    // 1. DB Insert
-    $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)")->execute([$userId, $message]);
+    // 1. DB Insert with Context
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$userId, $message, $type, $id]);
     
     // 2. Email Alert (Immediate)
     try {
@@ -133,18 +134,13 @@ function createNotification($pdo, $userId, $message) {
         
         if ($user && !empty($user['email'])) {
             $to = $user['email'];
-            $subject = "Update from WandWeb Portal";
-            $body = "Hello {$user['full_name']},\n\nNew activity on your portal:\n$message\n\nLogin to view: https://wandweb.co/portal/";
-            $headers = "From: noreply@wandweb.co\r\n";
-            $headers .= "Reply-To: support@wandweb.co\r\n";
-            $headers .= "X-Mailer: PHP/" . phpversion();
-            
-            // Silence mail errors to prevent API crashes
+            $subject = "New Activity: WandWeb Portal";
+            $link = "https://wandweb.co/portal/";
+            $body = "Hello {$user['full_name']},\n\n$message\n\nLogin to view: $link";
+            $headers = "From: noreply@wandweb.co\r\nReply-To: support@wandweb.co\r\nX-Mailer: PHP/" . phpversion();
             @mail($to, $subject, $body, $headers);
         }
-    } catch (Exception $e) {
-        // Ignore email failures, notification is saved in DB
-    }
+    } catch (Exception $e) { }
 }
 
 function notifyPartnerIfAssigned($pdo, $clientId, $message) {

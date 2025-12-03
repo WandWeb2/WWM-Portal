@@ -40,45 +40,28 @@ function handleCreateProject($pdo,$i){
 }
 
 function handleUpdateProjectStatus($pdo, $i, $s) {
-    $u = verifyAuth($i);
+    $u = verifyAuth($i); 
     if ($u['role'] !== 'admin' && $u['role'] !== 'partner') sendJson('error', 'Unauthorized');
-
+    
     $pid = (int)$i['project_id'];
     $status = strip_tags($i['status']);
-    $health = isset($i['health_score']) ? (int)$i['health_score'] : 0;
-
-    // 1. Fetch project to validate existence and get owner
-    $stmt = $pdo->prepare("SELECT * FROM projects WHERE id = ?");
+    $health = (int)$i['health_score'];
+    
+    $stmt = $pdo->prepare("SELECT user_id, title FROM projects WHERE id = ?");
     $stmt->execute([$pid]);
     $project = $stmt->fetch();
     if (!$project) sendJson('error', 'Project not found');
 
-    // 2. If partner, confirm they may act on this project
-    if ($u['role'] === 'partner') {
-        ensurePartnerSchema($pdo);
-        $check = $pdo->prepare("SELECT id FROM projects WHERE id=? AND (user_id=? OR user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id=?))");
-        $check->execute([$pid, $u['uid'], $u['uid']]);
-        if (!$check->fetch()) sendJson('error', 'Access Denied');
-    }
-
-    // 3. Update project row
     $pdo->prepare("UPDATE projects SET status=?, health_score=? WHERE id=?")->execute([$status, $health, $pid]);
-
-    // 4. Log to comments/chat as a system-style message
-    $actorName = !empty($u['name']) ? $u['name'] : (!empty($u['full_name']) ? $u['full_name'] : 'System');
-    $msg = "Project status updated to: " . strtoupper($status) . " by " . $actorName;
+    
+    $actorName = $u['name'] ?? $u['full_name'] ?? 'Staff';
+    $msg = "Status updated to " . strtoupper($status) . " by $actorName";
+    
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
         ->execute([$pid, $u['uid'], $msg]);
 
-    // 5. Notify the project owner
-    if (!empty($project['user_id'])) {
-        createNotification($pdo, $project['user_id'], "[Project Update] {$actorName} changed status of '{$project['title']}' to " . strtoupper($status));
-    }
-
-    // 6. Notify assigned partner(s) if this was a client-owned project
-    if (!empty($project['user_id'])) {
-        notifyPartnerIfAssigned($pdo, $project['user_id'], "Status changed for project '{$project['title']}' to " . strtoupper($status));
-    }
+    // Notify Client with Deep Link
+    createNotification($pdo, $project['user_id'], "Project '{$project['title']}' updated to " . strtoupper($status) . " by $actorName", 'project', $pid);
 
     sendJson('success', 'Updated');
 }
@@ -178,27 +161,22 @@ function handlePostComment($pdo,$i){
     $u = verifyAuth($i);
     $pid = (int)$i['project_id'];
     $message = strip_tags($i['message']);
-    $target_type = isset($i['target_type']) ? $i['target_type'] : 'project';
-    $target_id = isset($i['target_id']) ? (int)$i['target_id'] : 0;
-
+    
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, ?, ?)")
-        ->execute([$pid, $u['uid'], $message, $target_type, $target_id]);
-
-    // Fetch project for routing notifications
-    $stmt = $pdo->prepare("SELECT * FROM projects WHERE id = ?");
+        ->execute([$pid, $u['uid'], $message, $i['target_type'], (int)$i['target_id']]);
+    
+    $stmt = $pdo->prepare("SELECT user_id, title FROM projects WHERE id = ?");
     $stmt->execute([$pid]);
     $project = $stmt->fetch();
 
-    $actorName = !empty($u['name']) ? $u['name'] : (!empty($u['full_name']) ? $u['full_name'] : 'Someone');
+    $actorName = $u['name'] ?? $u['full_name'] ?? 'Someone';
 
-    // Notify project owner (unless they are the commenter)
-    if ($project && !empty($project['user_id']) && $project['user_id'] != $u['uid']) {
-        createNotification($pdo, $project['user_id'], "[Comment] {$actorName} commented on '{$project['title']}': " . substr($message,0,200));
-    }
-
-    // If a client posted, notify their assigned partner(s)
     if ($u['role'] === 'client') {
-        notifyPartnerIfAssigned($pdo, $u['uid'], "Client {$actorName} commented on project '{$project['title']}'.");
+        notifyPartnerIfAssigned($pdo, $u['uid'], "Client $actorName commented on '{$project['title']}'");
+    } else {
+        if ($project['user_id'] != $u['uid']) {
+            createNotification($pdo, $project['user_id'], "$actorName commented on '{$project['title']}': " . substr($message, 0, 50) . "...", 'project', $pid);
+        }
     }
 
     sendJson('success','Posted');

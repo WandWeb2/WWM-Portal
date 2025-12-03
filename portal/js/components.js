@@ -249,21 +249,36 @@ window.NotificationBell = ({ token }) => {
     const [open, setOpen] = React.useState(false); 
     const [unread, setUnread] = React.useState(0);
     
+    const fetchNotifs = async () => { 
+        const r = await window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ action: 'get_notifications', token }) }); 
+        if (r && r.status === 'success') { 
+            setList(r.notifications || []); 
+            setUnread((r.notifications || []).filter(n => n.is_read == 0).length); 
+        } 
+    };
+
     React.useEffect(() => { 
-        const f = async () => { 
-            const r = await window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ action: 'get_notifications', token }) }); 
-            if (r && r.status === 'success') { 
-                setList(r.notifications || []); 
-                setUnread((r.notifications || []).filter(n => n.is_read == 0).length); 
-            } 
-        }; 
-        f(); 
-        const i = setInterval(f, 30000); 
+        fetchNotifs();
+        const i = setInterval(fetchNotifs, 30000); 
         return () => clearInterval(i); 
     }, [token]);
     
-    const handleRead = async (id) => { 
-        await window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ action: 'mark_read', token, id }) }); 
+    const handleInteract = async (n) => { 
+        // 1. Mark Read
+        if(n.is_read == 0) {
+            await window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ action: 'mark_read', token, id: n.id }) }); 
+            setUnread(prev => Math.max(0, prev - 1));
+        }
+        
+        // 2. Jump (Deep Link)
+        if (n.target_type === 'project' && n.target_id) {
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); // Go to view
+            setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('open_project', { detail: n.target_id })); // Open Modal
+            }, 100);
+        }
+        
+        setOpen(false);
     };
     
     return (
@@ -274,17 +289,14 @@ window.NotificationBell = ({ token }) => {
             </button>
             {open && (
                 <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-2xl border overflow-hidden z-50">
-                    <div className="p-3 border-b font-bold text-sm">Notifications</div>
+                    <div className="p-3 border-b font-bold text-sm bg-slate-50">Notifications</div>
                     <div className="max-h-80 overflow-y-auto">
-                        {list.length === 0 ? (
-                            <div className="p-4 text-center text-slate-400 text-sm">No notifications</div>
-                        ) : (
-                            list.map(n => (
-                                <div key={n.id} onClick={()=>handleRead(n.id)} className={`p-3 border-b text-sm cursor-pointer hover:bg-slate-50 ${n.is_read==0?'bg-blue-50':''}`}>
-                                    {n.message}
-                                </div>
-                            ))
-                        )}
+                        {list.length === 0 ? <div className="p-4 text-center text-slate-400 text-sm">No notifications</div> : list.map(n => (
+                            <div key={n.id} onClick={()=>handleInteract(n)} className={`p-3 border-b text-sm cursor-pointer hover:bg-slate-50 transition-colors ${n.is_read==0?'bg-blue-50 border-l-4 border-l-[#2493a2]':''}`}>
+                                <div className="text-slate-800">{n.message}</div>
+                                <div className="text-[10px] text-slate-400 mt-1">{new Date(n.created_at).toLocaleString()}</div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}

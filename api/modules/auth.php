@@ -47,7 +47,12 @@ function handleSetPassword($pdo,$i){
 
 function handleGetNotifications($pdo,$i){
     $u=verifyAuth($i);
+    // Ensure table exists
     $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id INT AUTO_INCREMENT PRIMARY KEY, user_id INT, message TEXT, is_read TINYINT DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+    // Silent Schema Upgrade for Deep Linking
+    try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_type VARCHAR(50) DEFAULT NULL"); } catch(Exception $e){}
+    try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_id INT DEFAULT 0"); } catch(Exception $e){}
+    
     $s=$pdo->prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 20");
     $s->execute([$u['uid']]);
     sendJson('success','Fetched',['notifications'=>$s->fetchAll()]);
