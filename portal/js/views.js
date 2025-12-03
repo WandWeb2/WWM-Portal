@@ -13,20 +13,14 @@ const arrayMove = (arr, from, to) => {
     const res = Array.from(arr); 
     const [removed] = res.splice(from, 1); 
     res.splice(to, 0, removed); 
+    return res;
+};
+
+const ProjectCard = ({ project, isAdmin, setActiveProject, onDelete, onUpdateStatus }) => {
+    const Icons = window.Icons;
+    const isManager = isAdmin;
     return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {projects.map(p=>(
-                <ProjectCard 
-                    key={p.id} 
-                    project={p} 
-                    role={role} 
-                    setActiveProject={setActive} 
-                    onDelete={handleDelete} 
-                    onUpdateStatus={handleUpdateStatus} 
-                />
-            ))}
-        </div>
-    );
+        <div onClick={() => setActiveProject(project)} className="bg-white p-6 rounded-xl border shadow-sm cursor-pointer hover:border-[#dba000] transition-all">
             <div className="flex justify-between items-start mb-4">
                 <div>
                     <h4 className="font-bold text-slate-800">{project.title}</h4>
