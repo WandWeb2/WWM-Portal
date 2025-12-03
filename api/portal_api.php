@@ -60,7 +60,8 @@ try {
 		// Support & Ticketing
   		case 'get_tickets': require_once __DIR__.'/modules/support.php'; handleGetTickets($pdo, $input); break;
     	case 'get_ticket_thread': require_once __DIR__.'/modules/support.php'; handleGetTicketThread($pdo, $input); break;
-    	case 'create_ticket': require_once __DIR__.'/modules/support.php'; handleCreateTicket($pdo, $input, $secrets); break;
+        case 'create_ticket': require_once __DIR__.'/modules/support.php'; handleCreateTicket($pdo, $input, $secrets); break;
+        case 'create_ticket_from_insight': require_once __DIR__.'/modules/support.php'; handleCreateTicketFromInsight($pdo, $input); break;
     	case 'reply_ticket': require_once __DIR__.'/modules/support.php'; handleReplyTicket($pdo, $input); break;
     	case 'update_ticket_status': require_once __DIR__.'/modules/support.php'; handleUpdateTicketStatus($pdo, $input); break;
     	case 'suggest_solution': require_once __DIR__.'/modules/support.php'; handleSuggestSolution($input, $secrets); break;	

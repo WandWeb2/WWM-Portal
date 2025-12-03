@@ -154,4 +154,28 @@ function handleSuggestSolution($i, $s) {
     $text = $res['candidates'][0]['content']['parts'][0]['text'] ?? 'NO_MATCH';
     sendJson('success', 'Suggestion', ['match' => stripos($text, 'NO_MATCH') === false, 'text' => $text]);
 }
+
+// Create ticket from AI insight
+function handleCreateTicketFromInsight($pdo, $i) {
+    $u = verifyAuth($i);
+    ensureSupportSchema($pdo);
+    
+    $insight = strip_tags($i['insight']);
+    $subject = "Dashboard Discussion: " . substr($insight, 0, 30) . "...";
+    
+    // 1. Create Ticket
+    $stmt = $pdo->prepare("INSERT INTO tickets (user_id, subject, priority, status) VALUES (?, ?, 'normal', 'ai_triage')");
+    $stmt->execute([$u['uid'], $subject]);
+    $tid = $pdo->lastInsertId();
+    
+    // 2. Add AI's Insight as the first message (System)
+    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
+    $stmt->execute([$tid, "AI INSIGHT: " . $insight]);
+    
+    // 3. Add a welcome prompt
+    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
+    $stmt->execute([$tid, "I've started this support thread based on the AI's dashboard summary. Please let us know how we can assist you further or if you would like to escalate this issue."]);
+
+    sendJson('success', 'Thread Started', ['ticket_id' => $tid]);
+}
 ?>

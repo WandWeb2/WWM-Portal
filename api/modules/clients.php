@@ -102,6 +102,7 @@ function handleSubmitOnboarding($pdo, $input, $secrets) {
 }
 
 // === AI HANDLER WITH SUPPORT TRIGGER ===
+// === AI HANDLER WITH SUPPORT TRIGGER ===
 function handleAI($i, $s) {
     $user = verifyAuth($i);
     if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'AI', ['text' => 'Config Error: API Key missing.']);
@@ -112,22 +113,22 @@ function handleAI($i, $s) {
     $websiteContext = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Website data unavailable.";
     $dashboardContext = isset($i['data_context']) ? json_encode($i['data_context']) : "No active dashboard data.";
 
-    // SYSTEM PROMPT: Teach AI to be a Triage Agent
-    $basePrompt = "You are the WandWeb AI Assistant (Merchant Marine Officer persona).
+    // SYSTEM PROMPT: PROFESSIONAL EXECUTIVE ASSISTANT
+    $basePrompt = "You are the WandWeb Executive Assistant.
     CONTEXT: $dashboardContext
     KB: $websiteContext
     
     PROTOCOL:
-    1. Be helpful, professional, and concise. No gendered terms.
-    2. If the user asks a question answered in the KB, answer it.
+    1. Tone: Professional, concise, corporate, and proactive.
+    2. If the user asks a question answered in the KB, answer it directly.
     3. **CRITICAL:** If the user reports a problem, asks for a human, or seems frustrated, respond with a brief summary of the issue and then APPEND this exact tag to the end of your message:
        [ACTION:OPEN_TICKET]
     4. If you append the tag, say 'I can open a support ticket for you immediately.'";
 
     if ($user['role'] === 'admin') {
-        $systemPrompt = $basePrompt . "\n USER IS ADMIN (Captain). You have full access.";
+        $systemPrompt = $basePrompt . "\n USER IS EXECUTIVE (Captain). You have full visibility.";
     } else {
-        $systemPrompt = $basePrompt . "\n USER IS CLIENT (Passenger). Be extremely service-oriented.";
+        $systemPrompt = $basePrompt . "\n USER IS CLIENT (Stakeholder). Be extremely service-oriented.";
     }
 
     $userMessage = $i['prompt'];
