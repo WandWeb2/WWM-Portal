@@ -813,8 +813,26 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const isAdmin = role === 'admin';
 
     React.useEffect(() => {
-        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) })
-        .then(res => { if(res.status==='success') setMessages(res.messages); });
+        // AI typing simulation: pick up staged messages
+        const staged = localStorage.getItem('initial_ai_msgs');
+        if (staged && ticket && ticket.status === 'ai_triage') {
+            localStorage.removeItem('initial_ai_msgs');
+            try {
+                const initialMessages = JSON.parse(staged);
+                const aiMsgs = initialMessages.filter(m => m.sender_id === 0);
+                setMessages(aiMsgs.map(m => ({ ...m, message: '', typing: true })));
+                window.simulateTyping(aiMsgs, 50, async () => {
+                    const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
+                    if(res.status==='success') setMessages(res.messages);
+                });
+            } catch (e) {
+                window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) })
+                .then(res => { if(res.status==='success') setMessages(res.messages); });
+            }
+        } else {
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) })
+            .then(res => { if(res.status==='success') setMessages(res.messages); });
+        }
     }, [ticket]);
 
     React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
@@ -844,7 +862,7 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                     <h3 className="font-bold text-lg text-[#2c3259]">{ticket.subject}</h3>
                     <p className="text-xs text-slate-500">Ticket #{ticket.id} • Priority: <span className="uppercase">{ticket.priority}</span></p>
                 </div>
-                {isAdmin && ticket.status !== 'closed' && <button onClick={handleClose} className="text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-200">Close Ticket</button>}
+                {(isAdmin || role === 'client') && ticket.status !== 'closed' && <button onClick={handleClose} className="text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-200">Close Ticket</button>}
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={scrollRef}>
@@ -858,7 +876,7 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         <div key={m.id} className={`flex ${align}`}>
                             <div className={`max-w-[80%] p-3 rounded-lg text-sm shadow-sm ${bubbleColor}`}>
                                 {isInternalMsg && <div className="text-[10px] font-bold uppercase mb-1 opacity-50">Internal Note</div>}
-                                {m.message}
+                                {m.typing ? (<span>{m.message}<span className="inline-block w-3 h-4 bg-slate-200 animate-pulse align-text-bottom"/></span>) : m.message}
                                 <div className="text-[10px] mt-1 opacity-60 text-right">{new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                             </div>
                         </div>

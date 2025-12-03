@@ -51,6 +51,9 @@ try {
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
     $action = $input['action'] ?? $_POST['action'] ?? '';
 
+    // Ensure settings schema exists
+    ensureSettingsSchema($pdo);
+
     // Clear buffer before processing to ensure no whitespace from includes leaks out
     ob_clean(); 
 
@@ -121,6 +124,10 @@ try {
         case 'import_crm_clients': handleImportCRMClients($pdo, $input, $secrets); break;
         case 'import_stripe_clients': handleImportStripeClients($pdo, $input, $secrets); break;
         case 'ai_request': handleAI($input, $secrets); break;
+        
+        // Settings
+        case 'get_settings': handleGetSettings($pdo, $input); break;
+        case 'update_settings': handleUpdateSettings($pdo, $input); break;
 
         default: 
             ob_clean();

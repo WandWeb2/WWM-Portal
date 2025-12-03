@@ -1,6 +1,6 @@
 <?php
 // /api/modules/utils.php
-// Version: 29.0 - Added Partner Schema
+// Version: 30.0 - Added Email Template System
 
 function getDBConnection($secrets) {
     // Support both explicit DSN or legacy DB_HOST/DB_NAME format
@@ -59,6 +59,86 @@ function ensurePartnerSchema($pdo) {
     )");
 }
 
+// === NEW: SETTINGS SCHEMA ===
+function ensureSettingsSchema($pdo) {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
+        setting_key VARCHAR(191) PRIMARY KEY,
+        setting_value TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )");
+}
+
+// === NEW: SETTINGS HELPERS ===
+function getSetting($pdo, $key, $default = '') {
+    $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = ?");
+    $stmt->execute([$key]);
+    $row = $stmt->fetch();
+    return $row ? $row['setting_value'] : $default;
+}
+
+function getEmailTemplate($pdo) {
+    $template = getSetting($pdo, 'email_template', '');
+    if (!empty($template)) return $template;
+    
+    // Default HTML Template
+    return "<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Inter', Arial, sans-serif; background-color: #f3f4f6; }
+        .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+        .header { background-color: #2c3259; padding: 30px; text-align: center; }
+        .header img { max-width: 200px; height: auto; }
+        .content { padding: 40px 30px; color: #374151; line-height: 1.6; }
+        .content h2 { color: #2c3259; margin-top: 0; }
+        .content p { margin: 15px 0; }
+        .highlight { background: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #2493a2; }
+        .button { display: inline-block; background: #dba000; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+        .footer { background: #f9fafb; padding: 20px; text-align: center; color: #6b7280; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class='container'>
+        <div class='header'>
+            <img src='https://wandweb.co/wp-content/uploads/2024/11/wandweb-logo-white.png' alt='WandWeb Logo' />
+        </div>
+        <div class='content'>
+            [[BODY]]
+        </div>
+        [[BUTTON]]
+        <div class='footer'>
+            <p>&copy; " . date('Y') . " Wandering Webmaster. All rights reserved.</p>
+            <p><a href='https://wandweb.co' style='color: #2493a2; text-decoration: none;'>wandweb.co</a></p>
+        </div>
+    </div>
+</body>
+</html>";
+}
+
+function renderEmail($pdo, $subject, $body, $link = null, $buttonText = null, $recipientName = '') {
+    $template = getEmailTemplate($pdo);
+    
+    // Build button HTML if link provided
+    $buttonHtml = '';
+    if ($link && $buttonText) {
+        $buttonHtml = "<div style='text-align:center;'><a href='$link' class='button'>$buttonText</a></div>";
+    }
+    
+    // Build body with greeting
+    $greeting = $recipientName ? "Hello $recipientName," : "Hello Valued Client,";
+    $bodyHtml = "<p>$greeting</p>" . $body;
+    
+    // Replace placeholders
+    $template = str_replace('[[SUBJECT]]', $subject, $template);
+    $template = str_replace('[[BODY]]', $bodyHtml, $template);
+    $template = str_replace('[[BUTTON]]', $buttonHtml, $template);
+    $template = str_replace('[[RECIPIENT_NAME]]', $recipientName, $template);
+    
+    return $template;
+}
+
 function normalizePhone($phone) {
     $clean = preg_replace('/[^0-9]/', '', $phone);
     if (empty($clean)) return null;
@@ -98,7 +178,16 @@ function sendInvite($pdo, $email) {
     $pdo->prepare("DELETE FROM password_resets WHERE email=?")->execute([$email]);
     $pdo->prepare("INSERT INTO password_resets (email,token,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 7 DAY))")->execute([$email, $token]);
     $link = "https://wandweb.co/portal/?action=set_password&token=" . $token;
-    $html = "<div style='font-family:sans-serif;padding:20px;background:#f3f4f6;color:#333;'><div style='background:white;padding:30px;border-radius:10px;max-width:500px;margin:0 auto;border:1px solid #e5e7eb;'><h2 style='color:#2c3259;margin-top:0;'>Welcome to the Portal</h2><p>A client portal account has been created for you at Wandering Webmaster.</p><div style='background:#f8fafc;padding:15px;border-radius:6px;margin:20px 0;border-left:4px solid #2c3259;'><strong>Your Username:</strong> $email</div><p>Please click the button below to set your password and access your dashboard.</p><a href='$link' style='display:block;background:#ea580c;color:white;padding:12px 20px;text-align:center;text-decoration:none;border-radius:6px;margin-top:20px;font-weight:bold;'>Set Password</a></div></div>";
+    
+    // Use enhanced email template
+    $body = "<h2 style='color:#2c3259;'>Welcome to the Portal</h2>
+    <p>A client portal account has been created for you at Wandering Webmaster.</p>
+    <div class='highlight'>
+        <strong>Your Username:</strong> $email
+    </div>
+    <p>Please click the button below to set your password and access your dashboard.</p>";
+    
+    $html = renderEmail($pdo, "Your New Portal Account - Wandering Webmaster", $body, $link, "Set Password", "");
     $headers = "MIME-Version: 1.0\r\nContent-type:text/html;charset=UTF-8\r\nFrom: noreply@wandweb.co\r\nReply-To: support@wandweb.co";
     return mail($email, "Your New Portal Account - Wandering Webmaster", $html, $headers);
 }
@@ -131,7 +220,7 @@ function createNotification($pdo, $userId, $message, $type = null, $id = 0) {
     $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) VALUES (?, ?, ?, ?)");
     $stmt->execute([$userId, $message, $type, $id]);
     
-    // 2. Email Alert (Immediate)
+    // 2. Email Alert (Immediate) - Use enhanced template
     try {
         $u = $pdo->prepare("SELECT email, full_name FROM users WHERE id = ?");
         $u->execute([$userId]);
@@ -141,9 +230,13 @@ function createNotification($pdo, $userId, $message, $type = null, $id = 0) {
             $to = $user['email'];
             $subject = "New Activity: WandWeb Portal";
             $link = "https://wandweb.co/portal/";
-            $body = "Hello {$user['full_name']},\n\n$message\n\nLogin to view: $link";
-            $headers = "From: noreply@wandweb.co\r\nReply-To: support@wandweb.co\r\nX-Mailer: PHP/" . phpversion();
-            @mail($to, $subject, $body, $headers);
+            $body = "<h2 style='color:#2c3259;'>New Portal Activity</h2>
+            <p>$message</p>
+            <p>Click the button below to view your portal dashboard.</p>";
+            
+            $html = renderEmail($pdo, $subject, $body, $link, "View Portal", $user['full_name']);
+            $headers = "MIME-Version: 1.0\r\nContent-type:text/html;charset=UTF-8\r\nFrom: noreply@wandweb.co\r\nReply-To: support@wandweb.co\r\nX-Mailer: PHP/" . phpversion();
+            @mail($to, $subject, $html, $headers);
         }
     } catch (Exception $e) { }
 }

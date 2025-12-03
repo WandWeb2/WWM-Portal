@@ -162,4 +162,26 @@ function handleGetAdminDashboard($pdo, $i, $s) { $u = verifyAuth($i); if ($u['ro
 function handleImportCRMClients($pdo, $input, $secrets) { set_time_limit(300); $user = verifyAuth($input); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized'); ensureUserSchema($pdo); $logs = []; $added = 0; if (!empty($secrets['SWIPEONE_API_KEY'])) { $url = "https://api.swipeone.com/api/workspaces/" . $secrets['SWIPEONE_WORKSPACE_ID'] . "/contacts"; $ch = curl_init($url); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_HTTPHEADER, ["x-api-key: " . $secrets['SWIPEONE_API_KEY'], "Content-Type: application/json"]); $crmRes = json_decode(curl_exec($ch), true); curl_close($ch); if (!empty($crmRes['data'])) { foreach ($crmRes['data'] as $c) { $email = $c['email'] ?? ''; if (!$email) continue; $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?"); $stmt->execute([$email]); if (!$stmt->fetch()) { $pdo->prepare("INSERT INTO users (email, full_name, role, status) VALUES (?, ?, 'client', 'pending_invite')")->execute([$email, trim(($c['firstName']??'').' '.($c['lastName']??''))]); $logs[] = "[CRM] Imported $email"; $added++; } } } else { $logs[] = "[CRM] No contacts found."; } } else { $logs[] = "[CRM] Skipped (Missing Config)"; } if (!empty($secrets['GOOGLE_REFRESH_TOKEN'])) { $accessToken = getGoogleAccessToken($secrets); if ($accessToken) { $gUrl = "https://people.googleapis.com/v1/people/me/connections?personFields=names,emailAddresses,phoneNumbers,organizations,metadata&pageSize=100"; $ch = curl_init($gUrl); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $accessToken", "Accept: application/json"]); $gRes = json_decode(curl_exec($ch), true); curl_close($ch); if (!empty($gRes['connections'])) { foreach ($gRes['connections'] as $person) { $email = $person['emailAddresses'][0]['value'] ?? ''; if (!$email) continue; $name = $person['names'][0]['displayName'] ?? 'Google Client'; $googleId = $person['resourceName'] ?? ''; $stmt = $pdo->prepare("SELECT id, google_resource_name FROM users WHERE email = ?"); $stmt->execute([$email]); $existing = $stmt->fetch(); if ($existing) { if(empty($existing['google_resource_name'])) { $pdo->prepare("UPDATE users SET google_resource_name = ? WHERE id = ?")->execute([$googleId, $existing['id']]); $logs[] = "[GOOGLE] Linked ID for $email"; } } else { $pdo->prepare("INSERT INTO users (email, full_name, google_resource_name, role, status) VALUES (?, ?, ?, 'client', 'pending_invite')")->execute([$email, $name, $googleId]); $logs[] = "[GOOGLE] Imported $email"; $added++; } } } else { $logs[] = "[GOOGLE] No connections found."; } } else { $logs[] = "[GOOGLE] Auth failed."; } } else { $logs[] = "[GOOGLE] Skipped."; } sendJson('success', "Sync Cycle Complete", ['logs' => $logs]); }
 function handleImportStripeClients($pdo, $input, $secrets) { set_time_limit(300); $user = verifyAuth($input); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized'); ensureUserSchema($pdo); $response = stripeRequest($secrets, 'GET', 'customers?limit=100'); $customers = $response['data'] ?? []; $logs = []; foreach ($customers as $c) { $email = $c['email']; if (!$email) continue; $stmt = $pdo->prepare("SELECT id, stripe_id FROM users WHERE email = ?"); $stmt->execute([$email]); $existing = $stmt->fetch(); if ($existing) { if (empty($existing['stripe_id'])) { $pdo->prepare("UPDATE users SET stripe_id = ? WHERE email = ?")->execute([$c['id'], $email]); $logs[] = "[STRIPE] Linked ID for $email"; } } else { $pdo->prepare("INSERT INTO users (email, full_name, stripe_id, role, status) VALUES (?, ?, ?, 'client', 'active')")->execute([$email, $c['name'], $c['id']]); $logs[] = "[STRIPE] Imported $email"; } } sendJson('success', "Stripe Sync Complete", ['logs' => $logs]); }
 function getGoogleAccessToken($secrets) { $url = "https://oauth2.googleapis.com/token"; $params = ['client_id' => $secrets['GOOGLE_CLIENT_ID'], 'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'], 'refresh_token' => $secrets['GOOGLE_REFRESH_TOKEN'], 'grant_type' => 'refresh_token']; $ch = curl_init($url); curl_setopt($ch, CURLOPT_POST, 1); curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params)); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); $response = json_decode(curl_exec($ch), true); curl_close($ch); return $response['access_token'] ?? null; }
+
+// === NEW: SETTINGS HANDLERS ===
+function handleGetSettings($pdo, $i) {
+    $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureSettingsSchema($pdo);
+    $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings");
+    $settings = [];
+    while ($row = $stmt->fetch()) {
+        $settings[$row['setting_key']] = $row['setting_value'];
+    }
+    sendJson('success', 'Settings loaded', ['settings' => $settings]);
+}
+
+function handleUpdateSettings($pdo, $i) {
+    $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureSettingsSchema($pdo);
+    foreach ($i['settings'] ?? [] as $key => $value) {
+        $stmt = $pdo->prepare("REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)");
+        $stmt->execute([$key, $value]);
+    }
+    sendJson('success', 'Settings saved');
+}
 ?>

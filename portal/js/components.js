@@ -1,6 +1,7 @@
 /* =============================================================================
-   WandWeb Components - Refined UI & Formatting
-   ============================================================================= */
+    WandWeb Components - Refined UI & Formatting
+    Version: 31.0 - Added simulateTyping + FirstMate storage
+    ============================================================================= */
 
 // 1. Backgrounds
 window.PortalBackground = () => <div className="fixed inset-0 bg-slate-100 -z-50"/>;
@@ -50,6 +51,39 @@ window.Icons = {
     FileText: (p) => <Icon {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></Icon>,
     Settings: (p) => <Icon {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></Icon>,
     Anchor: (p) => <Icon {...p}><circle cx="12" cy="5" r="3"/><line x1="12" x2="12" y1="22" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></Icon>
+};
+
+// Global typing simulation utility for AI messages
+window.simulateTyping = (messages, delay = 50, callback) => {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        if (typeof callback === 'function') callback();
+        return;
+    }
+    let i = 0;
+    let char = 0;
+    // announce first message
+    window.dispatchEvent(new CustomEvent('new_ai_msg', { detail: messages[0] }));
+    const timer = setInterval(() => {
+        if (i >= messages.length) {
+            clearInterval(timer);
+            if (typeof callback === 'function') callback();
+            return;
+        }
+        const full = messages[i].message || '';
+        if (char < full.length) {
+            const partial = full.substring(0, char + 1);
+            window.dispatchEvent(new CustomEvent('new_ai_char', { detail: { id: messages[i].id, text: partial } }));
+            char++;
+        } else {
+            i++;
+            char = 0;
+            if (i < messages.length) {
+                setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('new_ai_msg', { detail: messages[i] }));
+                }, 500);
+            }
+        }
+    }, delay);
 };
 
 // 3. Error Boundary
@@ -217,6 +251,10 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin' }) => {
         if(res.status === 'success') {
             // 2. Set Navigation Target in Local Storage for persistent deep linking
             localStorage.setItem('pending_nav', JSON.stringify({ view: 'support', target_id: res.ticket_id }));
+            // Store initial AI messages for typing simulation
+            if (Array.isArray(res.initial_messages)) {
+                localStorage.setItem('initial_ai_msgs', JSON.stringify(res.initial_messages));
+            }
             
             // 3. Trigger view switch
             window.dispatchEvent(new CustomEvent('switch_view', { detail: 'support' }));

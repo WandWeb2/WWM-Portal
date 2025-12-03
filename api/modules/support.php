@@ -127,7 +127,31 @@ function handleReplyTicket($pdo, $i) {
     sendJson('success', 'Reply Sent'); 
 }
 
-function handleUpdateTicketStatus($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$i['status'], (int)$i['ticket_id']]); sendJson('success', 'Status Updated'); }
+function handleUpdateTicketStatus($pdo, $i) {
+    $u = verifyAuth($i);
+    $ticketId = (int)$i['ticket_id'];
+    $newStatus = $i['status'];
+    
+    // Allow admins to change any status
+    if ($u['role'] === 'admin') {
+        $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$newStatus, $ticketId]);
+        sendJson('success', 'Status Updated');
+    }
+    
+    // Allow clients to close their own tickets
+    if ($u['role'] === 'client' && $newStatus === 'closed') {
+        $stmt = $pdo->prepare("SELECT user_id FROM tickets WHERE id = ?");
+        $stmt->execute([$ticketId]);
+        $ticket = $stmt->fetch();
+        
+        if ($ticket && $ticket['user_id'] == $u['uid']) {
+            $pdo->prepare("UPDATE tickets SET status = 'closed' WHERE id = ?")->execute([$ticketId]);
+            sendJson('success', 'Ticket Closed');
+        }
+    }
+    
+    sendJson('error', 'Unauthorized');
+}
 
 function handleSuggestSolution($i, $s) {
     if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'Suggestion', ['text' => null]);
@@ -156,14 +180,39 @@ function handleCreateTicketFromInsight($pdo, $i) {
     
     // 2. Add AI's Insight as the first message (System)
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
-    $stmt->execute([$tid, "AI INSIGHT: " . $insight]);
+    $msg1 = "AI INSIGHT: " . $insight;
+    $stmt->execute([$tid, $msg1]);
+    $msg1Id = $pdo->lastInsertId();
     
     // 3. Add a welcome prompt
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
-    $stmt->execute([$tid, "I've started this support thread based on the AI's dashboard summary. Please let us know how we can assist you further or if you would like to escalate this issue."]);
+    $msg2 = "I've started this support thread based on the AI's dashboard summary. Please let us know how we can assist you further or if you would like to escalate this issue.";
+    $stmt->execute([$tid, $msg2]);
+    $msg2Id = $pdo->lastInsertId();
+    
+    // 4. Build initial messages array for typing simulation
+    $initialMessages = [
+        [
+            'id' => $msg1Id,
+            'sender_id' => 0,
+            'message' => $msg1,
+            'is_internal' => false,
+            'full_name' => 'System',
+            'role' => 'admin',
+            'created_at' => date('Y-m-d H:i:s')
+        ],
+        [
+            'id' => $msg2Id,
+            'sender_id' => 0,
+            'message' => $msg2,
+            'is_internal' => false,
+            'full_name' => 'System',
+            'role' => 'admin',
+            'created_at' => date('Y-m-d H:i:s')
+        ]
+    ];
 
-    sendJson('success', 'Thread Started', ['ticket_id' => $tid]);
+    sendJson('success', 'Thread Started', ['ticket_id' => $tid, 'initial_messages' => $initialMessages]);
 }
 
-?>
 ?>
