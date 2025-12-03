@@ -242,6 +242,9 @@ function createNotification($pdo, $userId, $message, $type = null, $id = 0) {
 }
 
 function notifyPartnerIfAssigned($pdo, $clientId, $message) {
+    // FIX: Ensure table exists before querying to prevent SQLSTATE[42S02]
+    ensurePartnerSchema($pdo);
+    
     $stmt = $pdo->prepare("SELECT partner_id FROM partner_assignments WHERE client_id = ?");
     $stmt->execute([$clientId]);
     $partner = $stmt->fetch();

@@ -1244,6 +1244,18 @@ const CreateTicketModal = ({ token, onClose, role }) => {
     const [searchTerm, setSearchTerm] = React.useState("");
     const [isSearching, setIsSearching] = React.useState(false);
 
+    // Helper to convert URLs to clickable links
+    const formatTextWithLinks = (text) => {
+        if (!text) return null;
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const parts = text.split(urlRegex);
+        return parts.map((part, i) => 
+            urlRegex.test(part) ? 
+            <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-bold break-all hover:text-blue-800">{part}</a> 
+            : part
+        );
+    };
+
     // Fetch Clients only if Admin
     React.useEffect(() => {
         if (isAdmin) {
@@ -1341,7 +1353,7 @@ const CreateTicketModal = ({ token, onClose, role }) => {
                     {suggestion && (
                         <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg text-sm text-blue-800">
                             <div className="flex items-center gap-2 font-bold mb-1"><Icons.Sparkles size={14}/> Suggestion found:</div>
-                            <p>{suggestion}</p>
+                            <p className="whitespace-pre-wrap">{formatTextWithLinks(suggestion)}</p>
                         </div>
                     )}
 
