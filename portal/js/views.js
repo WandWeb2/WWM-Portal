@@ -79,16 +79,33 @@ const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus
 
 const TaskManager = ({ project, token, onClose }) => {
     const Icons = window.Icons;
-    const [details, setDetails] = React.useState({ tasks: [], comments: [] }); 
-    const [msg, setMsg] = React.useState(""); 
-    const [newTask, setNewTask] = React.useState(""); 
-    const [activeTask, setActiveTask] = React.useState(null); 
+    const [details, setDetails] = React.useState({ tasks: [], comments: [] });
+    const [msg, setMsg] = React.useState("");
+    const [newTask, setNewTask] = React.useState("");
+    const [activeTask, setActiveTask] = React.useState(null);
 
-    const load = async () => { const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_project_details', token, project_id: project.id }) }); if (r.status === 'success') setDetails(r); };
+    const load = async () => {
+        const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_project_details', token, project_id: project.id }) });
+        if (r.status === 'success') setDetails(r);
+    };
     React.useEffect(() => { load(); }, [project.id]);
 
     const addTask = async () => { if (!newTask.trim()) return; await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'save_task', token, project_id: project.id, title: newTask }) }); setNewTask(""); load(); };
-    const toggleTask = async (id, current) => { const updated = (details.tasks || []).map(t => { if (t.id === id) return { ...t, is_complete: !current }; return t; }); setDetails({ ...details, tasks: updated }); await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'toggle_task', token, id, is_complete: !current ? 1 : 0 }) }); load(); };
+    
+    const toggleTask = async (id, current) => { 
+        // Optimistic update
+        const updated = (details.tasks || []).map(t => { if (t.id === id) return { ...t, is_complete: !current }; return t; }); 
+        setDetails({ ...details, tasks: updated }); 
+        await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'toggle_task', token, id, is_complete: !current ? 1 : 0 }) }); 
+        load(); // Reload to get updated health score
+    };
+
+    const deleteTask = async (id) => {
+        if(!confirm("Remove this task?")) return;
+        await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_task', token, task_id: id }) });
+        load();
+    };
+
     const sendComment = async (e) => { e.preventDefault(); if(!msg.trim()) return; await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'post_comment', token, project_id: project.id, message: msg, target_type: activeTask ? 'task' : 'project', target_id: activeTask ? activeTask.id : 0 }) }); setMsg(""); load(); };
     
     const comments = (details.comments || []).filter(c => activeTask ? (c.target_type === 'task' && c.target_id == activeTask.id) : (c.target_type === 'project'));
@@ -103,7 +120,25 @@ const TaskManager = ({ project, token, onClose }) => {
                     </div>
                     <div className="flex-1 overflow-y-auto p-6">
                         <div className="flex gap-2 mb-6"><input className="flex-1 p-3 border rounded-lg" placeholder="New Task..." value={newTask} onChange={e=>setNewTask(e.target.value)} /><button onClick={addTask} className="bg-[#2c3259] text-white px-4 rounded-lg"><Icons.Plus/></button></div>
-                        <div className="space-y-2">{(details.tasks || []).map(task => (<div key={task.id} onClick={() => setActiveTask(task)} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer ${activeTask?.id === task.id ? 'border-[#dba000] bg-orange-50' : 'border-slate-200'}`}><button onClick={(e) => { e.stopPropagation(); toggleTask(task.id, task.is_complete); }} className={`w-6 h-6 rounded-full border flex items-center justify-center ${task.is_complete ? 'bg-green-500 text-white' : ''}`}>{task.is_complete && <Icons.Check size={14}/>}</button><span className={task.is_complete ? 'line-through text-slate-400' : ''}>{task.title}</span></div>))}</div>
+                        <div className="space-y-2">
+                            {(details.tasks || []).map(task => {
+                                const isChecked = Number(task.is_complete) === 1;
+                                return (
+                                    <div key={task.id} onClick={() => setActiveTask(task)} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer group transition-colors ${activeTask?.id === task.id ? 'border-[#dba000] bg-orange-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); toggleTask(task.id, isChecked); }} 
+                                            className={`w-6 h-6 rounded-sm border flex items-center justify-center transition-colors ${isChecked ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300'}`}
+                                        >
+                                            {isChecked && <Icons.Check size={14}/>} 
+                                        </button>
+                                        <span className={`flex-1 ${isChecked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{task.title}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Icons.Trash size={14}/>
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
                 <div className="w-96 flex flex-col bg-slate-50">

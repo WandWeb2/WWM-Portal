@@ -73,6 +73,7 @@ try {
         case 'delete_project': handleDeleteProject($pdo, $input); break;
         case 'get_project_details': handleGetProjectDetails($pdo, $input); break;
         case 'save_task': handleSaveTask($pdo, $input); break;
+        case 'delete_task': handleDeleteTask($pdo, $input); break;
         case 'toggle_task': handleToggleTask($pdo, $input); break;
         case 'post_comment': handlePostComment($pdo, $input); break;
         case 'get_files': handleGetFiles($pdo, $input); break;

@@ -121,7 +121,30 @@ function fetchWandWebContext() {
 // === NOTIFICATION HELPER ===
 function createNotification($pdo, $userId, $message) {
     if (!$userId) return;
+    
+    // 1. DB Insert
     $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)")->execute([$userId, $message]);
+    
+    // 2. Email Alert (Immediate)
+    try {
+        $u = $pdo->prepare("SELECT email, full_name FROM users WHERE id = ?");
+        $u->execute([$userId]);
+        $user = $u->fetch();
+        
+        if ($user && !empty($user['email'])) {
+            $to = $user['email'];
+            $subject = "Update from WandWeb Portal";
+            $body = "Hello {$user['full_name']},\n\nNew activity on your portal:\n$message\n\nLogin to view: https://wandweb.co/portal/";
+            $headers = "From: noreply@wandweb.co\r\n";
+            $headers .= "Reply-To: support@wandweb.co\r\n";
+            $headers .= "X-Mailer: PHP/" . phpversion();
+            
+            // Silence mail errors to prevent API crashes
+            @mail($to, $subject, $body, $headers);
+        }
+    } catch (Exception $e) {
+        // Ignore email failures, notification is saved in DB
+    }
 }
 
 function notifyPartnerIfAssigned($pdo, $clientId, $message) {

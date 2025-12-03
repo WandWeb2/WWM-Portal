@@ -2,6 +2,13 @@
 // /api/modules/projects.php
 // Version: 29.0 - Partner Access Added
 
+function recalcProjectHealth($pdo, $pid) {
+    $r = $pdo->query("SELECT COUNT(*) as total, SUM(is_complete) as done FROM tasks WHERE project_id=" . (int)$pid)->fetch();
+    $score = ($r['total'] > 0) ? round(($r['done'] / $r['total']) * 100) : 0;
+    $pdo->prepare("UPDATE projects SET health_score = ? WHERE id = ?")->execute([$score, $pid]);
+    return $score;
+}
+
 function handleGetProjects($pdo,$i){
     $u=verifyAuth($i);
     $pdo->exec("CREATE TABLE IF NOT EXISTS projects (id INT AUTO_INCREMENT PRIMARY KEY, user_id INT, title VARCHAR(255), description TEXT, status VARCHAR(50), health_score INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
@@ -103,20 +110,68 @@ function handleGetProjectDetails($pdo,$i){
     sendJson('success','Loaded',['tasks'=>$t->fetchAll(),'comments'=>$c->fetchAll()]);
 }
 
-function handleSaveTask($pdo,$i){
-    $u=verifyAuth($i);
-    $pdo->prepare("INSERT INTO tasks (project_id, title) VALUES (?, ?)")->execute([(int)$i['project_id'], strip_tags($i['title'])]);
-    // Recalc health
-    $r=$pdo->query("SELECT COUNT(*) as total, SUM(is_complete) as done FROM tasks WHERE project_id=".(int)$i['project_id'])->fetch();
-    $s=($r['total']>0)?round(($r['done']/$r['total'])*100):0;
-    $pdo->prepare("UPDATE projects SET health_score = ? WHERE id = ?")->execute([$s,(int)$i['project_id']]);
-    sendJson('success','Saved');
+function handleSaveTask($pdo, $i) {
+    $u = verifyAuth($i);
+    $pid = (int)$i['project_id'];
+    $title = strip_tags($i['title']);
+    
+    // 1. Save
+    $pdo->prepare("INSERT INTO tasks (project_id, title) VALUES (?, ?)")->execute([$pid, $title]);
+    
+    // 2. Recalc
+    recalcProjectHealth($pdo, $pid);
+    
+    // 3. Notify & Log
+    $p = $pdo->query("SELECT title, user_id FROM projects WHERE id=$pid")->fetch();
+    $msg = "New task added: $title";
+    $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")->execute([$pid, $u['uid'], $msg]);
+    createNotification($pdo, $p['user_id'], "New Task in '{$p['title']}': $title");
+    
+    sendJson('success', 'Saved');
 }
 
-function handleToggleTask($pdo,$i){
-    $u=verifyAuth($i); $id=(int)$i['id'];
-    $pdo->prepare("UPDATE tasks SET is_complete = ? WHERE id = ?")->execute([(int)$i['is_complete'], $id]);
-    sendJson('success','Updated');
+function handleToggleTask($pdo, $i) {
+    $u = verifyAuth($i);
+    $tid = (int)$i['id'];
+    $done = (int)$i['is_complete'];
+    
+    // 1. Update
+    $pdo->prepare("UPDATE tasks SET is_complete = ? WHERE id = ?")->execute([$done, $tid]);
+    
+    // 2. Recalc (Need Project ID)
+    $t = $pdo->query("SELECT project_id, title FROM tasks WHERE id=$tid")->fetch();
+    if ($t) {
+        $pid = $t['project_id'];
+        recalcProjectHealth($pdo, $pid);
+        
+        // 3. Log
+        $status = $done ? "Completed" : "Re-opened";
+        $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
+            ->execute([$pid, $u['uid'], "Task '{$t['title']}' marked as $status"]);
+    }
+    
+    sendJson('success', 'Updated');
+}
+
+function handleDeleteTask($pdo, $i) {
+    $u = verifyAuth($i);
+    $tid = (int)$i['task_id'];
+    
+    // 1. Get Info
+    $t = $pdo->query("SELECT project_id, title FROM tasks WHERE id=$tid")->fetch();
+    if (!$t) sendJson('error', 'Not found');
+    
+    // 2. Delete
+    $pdo->prepare("DELETE FROM tasks WHERE id=?")->execute([$tid]);
+    
+    // 3. Recalc & Log
+    recalcProjectHealth($pdo, $t['project_id']);
+    
+    $pid = $t['project_id'];
+    $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
+        ->execute([$pid, $u['uid'], "Task removed: {$t['title']}"]);
+        
+    sendJson('success', 'Deleted');
 }
 
 function handlePostComment($pdo,$i){
