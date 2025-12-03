@@ -16,27 +16,38 @@ const arrayMove = (arr, from, to) => {
     return res;
 };
 
-const ProjectCard = ({ project, isAdmin, setActiveProject, onDelete, onUpdateStatus }) => {
+const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus }) => {
     const Icons = window.Icons;
-    const isManager = isAdmin;
+    const isAdmin = role === 'admin';
+    const isManager = role === 'admin' || role === 'partner';
+    const isArchived = project.status === 'archived';
+
+    // Dynamic classes for visual state
+    const containerClasses = isArchived 
+        ? "bg-slate-50 border-slate-200 opacity-60 grayscale cursor-not-allowed" 
+        : "bg-white hover:border-[#2493a2] cursor-pointer shadow-sm hover:shadow-md";
+
     return (
-        <div onClick={() => setActiveProject(project)} className="bg-white p-6 rounded-xl border shadow-sm cursor-pointer hover:border-[#dba000] transition-all">
+        <div 
+            className={`p-6 rounded-xl border transition-all group ${containerClasses}`} 
+            onClick={()=> !isArchived && setActiveProject(project)}
+        >
             <div className="flex justify-between items-start mb-4">
                 <div>
                     <h4 className="font-bold text-slate-800">{project.title}</h4>
                     <p className="text-xs text-slate-500">{isManager ? (project.client_name || 'Unassigned') : 'Active Project'}</p>
                 </div>
                 
-                {/* ADMINISTRATIVE ICONS (Top Right) */}
-                <div className="flex gap-1">
-                    <span className={`px-2 py-1 text-[10px] uppercase font-bold rounded mr-1 ${project.status==='active'?'bg-green-100 text-green-700':'bg-slate-100'}`}>{project.status}</span>
+                {/* TOP RIGHT ACTIONS (Admin Only) */}
+                <div className="flex items-center gap-1">
+                    <span className={`px-2 py-1 text-[10px] uppercase font-bold rounded mr-1 ${project.status==='active'?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}`}>{project.status}</span>
                     
                     {isAdmin && (
                         <>
-                            <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'archived')}} className="text-slate-300 hover:text-blue-500 p-1 rounded hover:bg-blue-50" title="Archive">
+                            <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'archived')}} className="text-slate-300 hover:text-blue-600 p-1.5 rounded-md hover:bg-blue-50 transition-colors" title="Archive">
                                 <Icons.Archive size={16}/>
                             </button>
-                            <button onClick={(e)=>{e.stopPropagation(); onDelete(project.id)}} className="text-slate-300 hover:text-red-500 p-1 rounded hover:bg-red-50" title="Delete">
+                            <button onClick={(e)=>{e.stopPropagation(); onDelete(project.id)}} className="text-slate-300 hover:text-red-600 p-1.5 rounded-md hover:bg-red-50 transition-colors" title="Delete">
                                 <Icons.Trash size={16}/>
                             </button>
                         </>
@@ -48,12 +59,18 @@ const ProjectCard = ({ project, isAdmin, setActiveProject, onDelete, onUpdateSta
                 <div className={`h-full ${project.health_score < 40 ? 'bg-red-500' : 'bg-green-500'}`} style={{width: project.health_score + '%'}}></div>
             </div>
 
-            {/* MANAGER CONTROLS (Bottom) - No Archive button here anymore */}
-            {isManager && (
-                <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'active')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-green-50 hover:text-green-600 border border-transparent hover:border-green-200">Set Active</button>
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'stalled')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-orange-50 hover:text-orange-600 border border-transparent hover:border-orange-200">Stall</button>
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'complete')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600 border border-transparent hover:border-blue-200">Mark Done</button>
+            {/* STATUS CONTROLS (Managers Only - Hidden if Archived) */}
+            {isManager && !isArchived && (
+                <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-100">
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'active')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-green-50 hover:text-green-600 border border-transparent hover:border-green-200 transition-colors">Active</button>
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'stalled')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-orange-50 hover:text-orange-600 border border-transparent hover:border-orange-200 transition-colors">Stall</button>
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'complete')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600 border border-transparent hover:border-blue-200 transition-colors">Done</button>
+                </div>
+            )}
+            
+            {isArchived && isAdmin && (
+                <div className="mt-4 pt-4 border-t border-slate-200 text-center">
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'active')}} className="text-xs font-bold text-blue-600 hover:underline">Restore Project</button>
                 </div>
             )}
         </div>
@@ -535,7 +552,7 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     };
     
     if(active) return <TaskManager project={active} token={token} onClose={()=>setActive(null)} />;
-    return (<div className="grid grid-cols-1 md:grid-cols-3 gap-6">{projects.map(p=><ProjectCard key={p.id} project={p} isAdmin={role==='admin'} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />)}</div>);
+    return (<div className="grid grid-cols-1 md:grid-cols-3 gap-6">{projects.map(p=><ProjectCard key={p.id} project={p} role={role} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />)}</div>);
 };
 
 window.OnboardingView = ({ token }) => { const [step, setStep] = React.useState(1); const [submitting, setSubmitting] = React.useState(false); const handleSubmit = async (e) => { e.preventDefault(); if (step < 3) { setStep(step + 1); return; } setSubmitting(true); const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); data.action = 'submit_onboarding'; data.onboarding_token = token; const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(data) }); if (res.status === 'success') { alert(res.message); window.location.href = '/portal/'; } else { alert("Error: " + res.message); setSubmitting(false); } }; return (<div className="min-h-screen bg-slate-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden border border-slate-100"><div className="bg-[#2c3259] p-6 text-center"><img src={LOGO_URL} alt="WandWeb" className="h-16 mx-auto" /><p className="text-slate-300 mt-2">Project Onboarding</p></div><form onSubmit={handleSubmit} className="p-8">{step === 1 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">G'Day! Your Details</h2><div><label className="block text-sm font-bold text-slate-600">Prefix</label><select name="prefix" className="w-full p-3 border rounded bg-slate-50"><option>Mr</option><option>Mrs</option><option>Ms</option></select></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-slate-600">First Name *</label><input name="first_name" className="w-full p-3 border rounded" required/></div><div><label className="block text-sm font-bold text-slate-600">Last Name *</label><input name="last_name" className="w-full p-3 border rounded" required/></div></div><div><label className="block text-sm font-bold text-slate-600">Email *</label><input name="email" type="email" className="w-full p-3 border rounded" required/></div><div><label className="block text-sm font-bold text-slate-600">Phone Number *</label><input name="phone" className="w-full p-3 border rounded" required/></div></div>)}{step === 2 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">Business Details</h2><div><label className="block text-sm font-bold text-slate-600">Business Name</label><input name="business_name" className="w-full p-3 border rounded"/></div><div><label className="block text-sm font-bold text-slate-600">Address</label><textarea name="address" className="w-full p-3 border rounded h-20"></textarea></div><div><label className="block text-sm font-bold text-slate-600">Position</label><input name="position" className="w-full p-3 border rounded" placeholder="Your position within the Business"/></div><div><label className="block text-sm font-bold text-slate-600">Website</label><input name="website" className="w-full p-3 border rounded" placeholder="Current URL (if any)"/></div></div>)}{step === 3 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">How can we best help you?</h2><div><label className="block text-sm font-bold text-slate-600">Project Goals</label><textarea name="goals" className="w-full p-3 border rounded h-24"></textarea></div><div><label className="block text-sm font-bold text-slate-600">Scope of Work</label><textarea name="scope" className="w-full p-3 border rounded h-24"></textarea></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-slate-600">Timeline</label><input name="timeline" className="w-full p-3 border rounded"/></div><div><label className="block text-sm font-bold text-slate-600">Budget</label><input name="budget" className="w-full p-3 border rounded"/></div></div><div><label className="block text-sm font-bold text-slate-600">Challenges</label><textarea name="challenges" className="w-full p-3 border rounded h-20"></textarea></div></div>)}<div className="mt-8 flex justify-between">{step > 1 && <button type="button" onClick={() => setStep(step - 1)} className="px-6 py-2 text-slate-600 font-bold">Back</button>}<button type="submit" disabled={submitting} className="ml-auto bg-purple-700 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-purple-800 transition-colors">{submitting ? 'Submitting...' : (step === 3 ? 'Finish & Submit' : 'Next')}</button></div></form></div></div>); };

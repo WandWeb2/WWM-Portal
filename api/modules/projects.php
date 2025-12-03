@@ -32,13 +32,25 @@ function handleCreateProject($pdo,$i){
     sendJson('success','Created');
 }
 
-function handleUpdateProjectStatus($pdo,$i,$s){
-    $u=verifyAuth($i); 
-    // Allow Admin OR Partner to update status
-    if($u['role']!=='admin' && $u['role']!=='partner') sendJson('error','Unauthorized');
+function handleUpdateProjectStatus($pdo, $i, $s) {
+    $u = verifyAuth($i); 
+    // 1. Security: Admin or Partner only
+    if ($u['role'] !== 'admin' && $u['role'] !== 'partner') sendJson('error', 'Unauthorized');
     
-    $pdo->prepare("UPDATE projects SET status=?, health_score=? WHERE id=?")->execute([strip_tags($i['status']),(int)$i['health_score'],(int)$i['project_id']]);
-    sendJson('success','Updated');
+    $pid = (int)$i['project_id'];
+    $status = strip_tags($i['status']);
+    $health = (int)$i['health_score'];
+    
+    // 2. Update Project
+    $pdo->prepare("UPDATE projects SET status=?, health_score=? WHERE id=?")->execute([$status, $health, $pid]);
+    
+    // 3. Log to Chat (System Message style)
+    $msg = "Project status updated to: " . strtoupper($status);
+    // target_id 0 implies 'project' level comment
+    $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
+        ->execute([$pid, $u['uid'], $msg]);
+
+    sendJson('success', 'Updated');
 }
 
 function handleDeleteProject($pdo,$i){
