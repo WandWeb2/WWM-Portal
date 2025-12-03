@@ -95,17 +95,32 @@ function handleGetTicketThread($pdo, $i) {
 
 function handleCreateTicket($pdo, $i, $s) { 
     $u = verifyAuth($i); ensureSupportSchema($pdo); 
+    
+    // Determine the actual owner of the ticket
+    $ticketOwnerId = $u['uid'];
+    if (($u['role'] === 'admin' || $u['role'] === 'partner') && !empty($i['target_client_id'])) {
+        $ticketOwnerId = (int)$i['target_client_id'];
+    }
+
     $stmt = $pdo->prepare("INSERT INTO tickets (user_id, project_id, subject, priority, status) VALUES (?, ?, ?, ?, 'open')"); 
     $pid = !empty($i['project_id']) ? (int)$i['project_id'] : NULL; 
-    $stmt->execute([$u['uid'], $pid, strip_tags($i['subject']), $i['priority']]); 
+    $stmt->execute([$ticketOwnerId, $pid, strip_tags($i['subject']), $i['priority']]); 
     $ticketId = $pdo->lastInsertId(); 
+    
+    // The sender is still the actual logged-in user (Admin/Partner), so the message history is accurate
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, ?, ?)"); 
     $stmt->execute([$ticketId, $u['uid'], strip_tags($i['message'])]); 
+    
+    // If created by Client, auto-reply. If created BY Admin FOR Client, notify Client.
     if ($u['role'] === 'client') { 
-        $ack = "Message received. We have logged ticket #$ticketId and notified the team. A support officer will review it shortly."; 
+        $ack = "Message received. We have logged ticket #$ticketId and notified the team."; 
         $stmt->execute([$ticketId, 0, $ack]); 
         notifyPartnerIfAssigned($pdo, $u['uid'], "Client {$u['name']} created Ticket #$ticketId");
-    } 
+    } elseif ($ticketOwnerId !== $u['uid']) {
+        // Created by Admin/Partner for Client -> Notify Client
+        createNotification($pdo, $ticketOwnerId, "New Support Ticket #$ticketId opened for you by {$u['name']}", 'ticket', $ticketId);
+    }
+
     sendJson('success', 'Ticket Created'); 
 }
 

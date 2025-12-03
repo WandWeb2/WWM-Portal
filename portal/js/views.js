@@ -420,59 +420,105 @@ window.ClientsView = ({ token, role }) => {
 
 window.SettingsView = ({ token, role }) => {
     const Icons = window.Icons;
-    const [activeTab, setActiveTab] = React.useState('data_sync'); 
-    const [syncing, setSyncing] = React.useState(false); 
+    const [activeTab, setActiveTab] = React.useState('admin_controls'); 
+    const [users, setUsers] = React.useState([]);
+    const [loading, setLoading] = React.useState(false);
     const [logs, setLogs] = React.useState([]);
 
     if (role !== 'admin') return <div className="p-10 text-center text-slate-500">Access Restricted</div>;
 
-    const handleMasterSync = async () => { 
-        setSyncing(true); 
-        setLogs(prev => ["[START] Starting Master Sync...", ...prev]); 
-        
-        // 1. CRM Sync
-        try { 
-            const res1 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); 
-            if (res1.logs) setLogs(prev => [...res1.logs, ...prev]); 
-            setLogs(prev => [`[CRM] ${res1.message || 'Done'}`, ...prev]); 
-        } catch (e) { setLogs(prev => [`[ERROR] CRM Sync Failed`, ...prev]); } 
-        
-        // 2. Stripe Sync
-        try { 
-            const res2 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); 
-            if (res2.logs) setLogs(prev => [...res2.logs, ...prev]); 
-            setLogs(prev => [`[STRIPE] ${res2.message || 'Done'}`, ...prev]); 
-        } catch (e) { setLogs(prev => [`[ERROR] Stripe Sync Failed`, ...prev]); } 
-        
-        // 3. NEW: Merge Duplicates
-        try {
-            setLogs(prev => [`[MERGE] Scanning for duplicates...`, ...prev]);
-            const res3 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'merge_duplicates', token }) });
-            if (res3.logs) setLogs(prev => [...res3.logs, ...prev]);
-            setLogs(prev => [`[MERGE] ${res3.message || 'Cleanup Complete'}`, ...prev]);
-        } catch (e) { setLogs(prev => [`[ERROR] Merge Logic Failed`, ...prev]); }
+    React.useEffect(() => {
+        if (activeTab === 'users') fetchUsers();
+    }, [activeTab]);
 
-        setSyncing(false); 
-        setLogs(prev => ["[DONE] Master Sync Complete.", ...prev]); 
+    const fetchUsers = async () => {
+        setLoading(true);
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
+        if (res.status === 'success') setUsers(res.clients || []);
+        setLoading(false);
+    };
+
+    const handleRoleChange = async (userId, newRole) => {
+        if(!confirm(`Change user role to ${newRole.toUpperCase()}?`)) return;
+        const res = await window.safeFetch(API_URL, { 
+            method: 'POST', 
+            body: JSON.stringify({ action: 'update_user_role', token, client_id: userId, role: newRole }) 
+        });
+        if (res.status === 'success') fetchUsers(); else alert(res.message);
+    };
+
+    const handleRecalculateAll = async () => {
+        // This is a client-side loop helper to refresh project stats if they drift
+        setLogs(prev => ["Triggering project health check...", ...prev]);
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) });
+        if(res.projects) {
+            setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]);
+            // Force reload via event
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); 
+            setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100);
+        }
+    };
+
+    // Existing Data Sync Logic
+    const handleMasterSync = async () => { 
+        setLoading(true); setLogs(prev => ["[START] Master Sync...", ...prev]); 
+        try { 
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); 
+            setLogs(prev => ["[CRM] Done", ...prev]); 
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); 
+            setLogs(prev => ["[STRIPE] Done", ...prev]); 
+        } catch (e) { setLogs(prev => ["[ERROR] Sync Failed", ...prev]); }
+        setLoading(false);
     };
 
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="flex gap-4 border-b border-slate-200 pb-1">
-                <button onClick={() => setActiveTab('data_sync')} className={`px-4 py-2 text-sm font-bold capitalize whitespace-nowrap ${activeTab === 'data_sync' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400 hover:text-slate-600'}`}>Data Sync</button>
+                <button onClick={() => setActiveTab('admin_controls')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'admin_controls' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>Admin Suite</button>
+                <button onClick={() => setActiveTab('users')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'users' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>User Manager</button>
             </div>
-            {activeTab === 'data_sync' && (
-                <div className="bg-white p-8 rounded-xl border shadow-sm max-w-4xl">
-                    <h3 className="text-xl font-bold text-[#2c3259] mb-2">Data Synchronization</h3>
-                    <p className="text-sm text-slate-500 mb-6">Pull data from SwipeOne (CRM) and Stripe (Billing), then automatically merge duplicate client records.</p>
-                    <div className="flex gap-4 mb-6">
-                        <button onClick={handleMasterSync} disabled={syncing} className="bg-[#2c3259] text-white px-6 py-3 rounded-lg font-bold shadow-lg hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2">
-                            {syncing ? <Icons.Loader className="animate-spin"/> : <Icons.Sparkles/>} Run Master Sync
+
+            {activeTab === 'admin_controls' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-xl border shadow-sm">
+                        <h3 className="text-lg font-bold text-[#2c3259] mb-2 flex items-center gap-2"><Icons.Activity size={20}/> Project Health</h3>
+                        <p className="text-sm text-slate-500 mb-4">Fix progress bars and sync task counts.</p>
+                        <button onClick={handleRecalculateAll} className="bg-slate-100 text-slate-700 px-4 py-2 rounded font-bold text-xs hover:bg-slate-200 w-full text-left">Recalculate Metrics</button>
+                    </div>
+                    <div className="bg-white p-6 rounded-xl border shadow-sm">
+                        <h3 className="text-lg font-bold text-[#2c3259] mb-2 flex items-center gap-2"><Icons.Cloud size={20}/> External Data</h3>
+                        <p className="text-sm text-slate-500 mb-4">Pull latest clients from Stripe & CRM.</p>
+                        <button onClick={handleMasterSync} disabled={loading} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-xs w-full text-left flex justify-between items-center">
+                            {loading ? 'Syncing...' : 'Run Master Sync'} <Icons.ArrowDown size={14}/>
                         </button>
                     </div>
-                    <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-green-400 h-64 overflow-y-auto shadow-inner">
-                        {logs.length === 0 ? <span className="text-slate-500">// Ready to sync...</span> : logs.map((l, i) => <div key={i} className="mb-1">{l}</div>)}
-                    </div>
+                    {logs.length > 0 && <div className="col-span-2 bg-slate-900 text-green-400 p-4 rounded-lg font-mono text-xs max-h-40 overflow-y-auto">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>}
+                </div>
+            )}
+
+            {activeTab === 'users' && (
+                <div className="bg-white rounded border overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 border-b"><tr><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3 text-right">Actions</th></tr></thead>
+                        <tbody>
+                            {users.map(u => (
+                                <tr key={u.id} className="border-b">
+                                    <td className="p-3">
+                                        <div className="font-bold text-[#2c3259]">{u.full_name}</div>
+                                        <div className="text-xs text-slate-400">{u.email}</div>
+                                    </td>
+                                    <td className="p-3"><span className="bg-slate-100 px-2 py-1 rounded text-xs uppercase font-bold">{u.role}</span></td>
+                                    <td className="p-3 text-right">
+                                        <select onChange={(e)=>handleRoleChange(u.id, e.target.value)} value={u.role} className="p-1 border rounded text-xs">
+                                            <option value="client">Client</option>
+                                            <option value="partner">Partner</option>
+                                            <option value="admin">Admin</option>
+                                        </select>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             )}
         </div>
@@ -635,7 +681,9 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {filteredProjects.map(p=><ProjectCard key={p.id} project={p} role={role} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />)}
+                    {filteredProjects.map(p=>
+                        <ProjectCard key={p.id} project={p} role={role} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />
+                    )}
                 </div>
             )}
 
@@ -986,20 +1034,31 @@ const CreateTicketModal = ({ token, onClose }) => {
     const Icons = window.Icons;
     const [subject, setSubject] = React.useState("");
     const [suggestion, setSuggestion] = React.useState(null);
-    const [loadingSuggestion, setLoadingSuggestion] = React.useState(false);
+    const [clients, setClients] = React.useState([]); // List of clients for Admin selector
+    const [selectedClient, setSelectedClient] = React.useState(""); // Target client ID
+    const [isAdmin, setIsAdmin] = React.useState(false);
+
+    // 1. Check Role & Fetch Clients if Admin
+    React.useEffect(() => {
+        const checkRole = async () => {
+            // We deduce role from whether we can fetch clients. 
+            // Alternatively, pass 'role' as prop. But for now, try fetch.
+            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
+            if (res.status === 'success' && res.clients) {
+                setClients(res.clients);
+                setIsAdmin(true);
+            }
+        };
+        checkRole();
+    }, [token]);
 
     // Smart Suggestion Debounce
     React.useEffect(() => {
         const timer = setTimeout(async () => {
             if (subject.length > 10) {
-                setLoadingSuggestion(true);
                 const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'suggest_solution', token, subject }) });
-                if (res.status === 'success' && res.match) {
-                    setSuggestion(res.text);
-                } else {
-                    setSuggestion(null);
-                }
-                setLoadingSuggestion(false);
+                if (res.status === 'success' && res.match) setSuggestion(res.text);
+                else setSuggestion(null);
             }
         }, 1000);
         return () => clearTimeout(timer);
@@ -1008,15 +1067,21 @@ const CreateTicketModal = ({ token, onClose }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
-        const res = await window.safeFetch(API_URL, { 
-            method: 'POST', 
-            body: JSON.stringify({ 
-                action: 'create_ticket', token, 
-                subject: f.get('subject'), 
-                message: f.get('message'), 
-                priority: f.get('priority') 
-            }) 
-        });
+        
+        const payload = { 
+            action: 'create_ticket', 
+            token, 
+            subject: f.get('subject'), 
+            message: f.get('message'), 
+            priority: f.get('priority') 
+        };
+
+        // If Admin selected a client, inject it
+        if (isAdmin && selectedClient) {
+            payload.target_client_id = selectedClient;
+        }
+
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
         if (res.status === 'success') onClose(); else alert(res.message);
     };
 
@@ -1029,6 +1094,23 @@ const CreateTicketModal = ({ token, onClose }) => {
                 </div>
                 
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    {/* ADMIN: Client Selector */}
+                    {isAdmin && (
+                        <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Opening Ticket For:</label>
+                            <select 
+                                className="w-full p-2 border rounded text-sm" 
+                                value={selectedClient} 
+                                onChange={e => setSelectedClient(e.target.value)}
+                            >
+                                <option value="">Myself (Internal)</option>
+                                {clients.map(c => (
+                                    <option key={c.id} value={c.id}>{c.full_name} ({c.business_name})</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Subject</label>
                         <input 
@@ -1041,13 +1123,10 @@ const CreateTicketModal = ({ token, onClose }) => {
                         />
                     </div>
 
-                    {/* AI SUGGESTION BOX */}
-                    {loadingSuggestion && <div className="text-xs text-[#2493a2] flex items-center gap-2"><Icons.Sparkles size={12} className="animate-spin"/> AI is checking knowledge base...</div>}
                     {suggestion && (
                         <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg text-sm text-blue-800">
                             <div className="flex items-center gap-2 font-bold mb-1"><Icons.Sparkles size={14}/> Suggestion found:</div>
                             <p>{suggestion}</p>
-                            <div className="mt-2 text-xs text-blue-600">Does this answer your question? If so, you can close this dialog.</div>
                         </div>
                     )}
 
@@ -1069,7 +1148,7 @@ const CreateTicketModal = ({ token, onClose }) => {
 
                     <div className="pt-2">
                         <button className="w-full bg-[#2493a2] hover:bg-[#1e7e8b] text-white p-3 rounded-lg font-bold shadow-lg transition-colors">
-                            Submit Ticket
+                            {isAdmin && selectedClient ? "Create Ticket for Client" : "Submit Ticket"}
                         </button>
                     </div>
                 </form>
