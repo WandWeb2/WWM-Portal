@@ -1,8 +1,10 @@
 /* =============================================================================
    WandWeb Portal Views
    File: /portal/js/views.js
+   Version: 30.1 (Force Fix)
    ============================================================================= */
-console.log("Views.js v30.0 Loaded successfully");
+console.log("Views.js v30.1 - Force Loaded"); // Debugging confirmation
+
 const API_URL = '/api/portal_api.php'; 
 const LOGO_URL = "https://wandweb.co/wp-content/uploads/2025/11/WEBP-LQ-Logo-with-text-mid-White.webp";
 
@@ -15,10 +17,13 @@ const arrayMove = (arr, from, to) => {
 };
 
 // --- LOCAL SUB-COMPONENTS ---
-// These are used internally by the Views and don't need to be on window
 
 const ProjectCard = ({ project, isAdmin, setActiveProject, onDelete, onUpdateStatus }) => {
-    const Icons = window.Icons; // Access global icons
+    const Icons = window.Icons;
+    
+    // Debugging: If you don't see the button, check the console for this log
+    // console.log("Rendering Card:", project.id, "IsAdmin:", isAdmin);
+
     return (
         <div className="bg-white p-6 rounded-xl border shadow-sm cursor-pointer hover:border-blue-400 transition-colors group" onClick={()=>setActiveProject(project)}>
             <div className="flex justify-between items-start mb-4">
@@ -35,11 +40,11 @@ const ProjectCard = ({ project, isAdmin, setActiveProject, onDelete, onUpdateSta
                 <div className={`h-full ${project.health_score < 40 ? 'bg-red-500' : 'bg-green-500'}`} style={{width: project.health_score + '%'}}></div>
             </div>
             {isAdmin && (
-                <div className="flex gap-2 mt-4 pt-4 border-t flex-wrap">
+                <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
                     <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'active')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-green-50 hover:text-green-600">Active</button>
                     <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'stalled')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-orange-50 hover:text-orange-600">Stall</button>
                     <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'complete')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600">Done</button>
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'archived')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-slate-200 hover:text-slate-600">Archive</button>
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'archived')}} className="text-[10px] bg-slate-200 text-slate-600 px-2 py-1 rounded hover:bg-slate-300 hover:text-slate-800 font-bold">ARCHIVE</button>
                 </div>
             )}
         </div>
@@ -170,7 +175,6 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
         if (res.status === 'success') { onUpdate(); onClose(); } else alert(res.message);
     };
 
-    // Always declare handlers before conditional return
     const handlePromote = async () => {
         const c = details?.client || client;
         const newRole = c.role === 'partner' ? 'client' : 'partner';
@@ -235,11 +239,8 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
                 <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
                     {tab === 'profile' && (
                         <form onSubmit={handleSaveProfile} className="max-w-lg mx-auto space-y-6">
-                            {/* ... (Existing profile inputs) ... */}
                             <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Full Name</label><input name="full_name" defaultValue={c.full_name} className="w-full p-2 border rounded" required /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Status</label><select name="status" defaultValue={c.status} className="w-full p-2 border rounded"><option value="active">Active</option><option value="pending_invite">Pending Invite</option><option value="inactive">Inactive</option></select></div></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Email</label><input name="email" defaultValue={c.email} className="w-full p-2 border rounded" required /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Business</label><input name="business_name" defaultValue={c.business_name} className="w-full p-2 border rounded" /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Phone</label><input name="phone" defaultValue={window.formatPhone(c.phone)} className="w-full p-2 border rounded" /></div></div>
-                            
                             <button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow-lg hover:opacity-90">Save Changes</button>
-                            
                             <div className="pt-6 border-t mt-6">
                                 <button type="button" onClick={handlePromote} className="text-xs text-blue-600 underline">
                                     {c.role === 'partner' ? 'Demote to Standard Client' : 'Promote to Partner (Manager)'}
@@ -247,17 +248,13 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
                             </div>
                         </form>
                     )}
-                    
-                    {/* ... (Financials and Projects tabs remain same) ... */}
                     {tab === 'financials' && (<div className="space-y-8"><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Active Subscriptions</h3>{subs.length === 0 ? <p className="text-sm text-slate-400 italic">No active subscriptions found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Plan</th><th className="p-3">Amount</th><th className="p-3">Next Bill</th></tr></thead><tbody>{subs.map(s => <tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.plan}</td><td className="p-3">${s.amount}/{s.interval}</td><td className="p-3 text-slate-500">{s.next_bill}</td></tr>)}</tbody></table></div>}</div><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Invoice History</h3>{invs.length === 0 ? <p className="text-sm text-slate-400 italic">No invoices found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Date</th><th className="p-3">#</th><th className="p-3">Amount</th><th className="p-3">Status</th><th className="p-3 text-right">PDF</th></tr></thead><tbody>{invs.map(i => <tr key={i.id} className="border-b"><td className="p-3 text-slate-500">{i.date}</td><td className="p-3 font-mono text-xs">{i.number}</td><td className="p-3 font-bold">${i.amount}</td><td className="p-3"><span className={`px-2 py-1 rounded text-[10px] uppercase font-bold ${i.status==='paid'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{i.status}</span></td><td className="p-3 text-right"><a href={i.pdf} target="_blank" className="text-blue-600 hover:underline">Download</a></td></tr>)}</tbody></table></div>}</div></div>)}
-                    {tab === 'projects' && (<div><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-[#2c3259]">Client Projects</h3></div>{projs.length === 0 ? <div className="p-8 text-center border-2 border-dashed rounded-lg text-slate-400">No projects found.</div> : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{projs.map(p => (<div key={p.id} className="bg-white p-4 rounded-lg border shadow-sm"><div className="flex justify-between mb-2"><h4 className="font-bold">{p.title}</h4><span className="text-xs bg-slate-100 px-2 py-1 rounded uppercase font-bold">{p.status}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="h-full bg-[#dba000]" style={{width: p.health_score + '%'}}></div></div><div className="flex gap-2 mt-4 pt-4 border-t"><button onClick={async ()=>{if(confirm('Delete this project?')){const res=await window.safeFetch(API_URL,{method:'POST',body:JSON.stringify({action:'delete_project',token,project_id:p.id})});if(res.status==='success'){const updated=await window.safeFetch(API_URL,{method:'POST',body:JSON.stringify({action:'get_client_details',token,client_id:client.id})});if(updated.status==='success')setDetails(updated);onUpdate();}}}} className="text-xs text-red-500 hover:text-red-700 font-bold">Delete</button><button onClick={async ()=>{const res=await window.safeFetch(API_URL,{method:'POST',body:JSON.stringify({action:'update_project_status',token,project_id:p.id,status:'archived',health_score:p.health_score})});if(res.status==='success'){const updated=await window.safeFetch(API_URL,{method:'POST',body:JSON.stringify({action:'get_client_details',token,client_id:client.id})});if(updated.status==='success')setDetails(updated);onUpdate();}}} className="text-xs text-slate-500 hover:text-slate-700 font-bold">Archive</button></div></div>))}</div>}</div>)}
-
+                    {tab === 'projects' && (<div><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-[#2c3259]">Client Projects</h3></div>{projs.length === 0 ? <div className="p-8 text-center border-2 border-dashed rounded-lg text-slate-400">No projects found.</div> : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{projs.map(p => (<div key={p.id} className="bg-white p-4 rounded-lg border shadow-sm"><div className="flex justify-between mb-2"><h4 className="font-bold">{p.title}</h4><span className="text-xs bg-slate-100 px-2 py-1 rounded uppercase font-bold">{p.status}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="h-full bg-[#dba000]" style={{width: p.health_score + '%'}}></div></div></div>))}</div>}</div>)}
                     {tab === 'managed clients' && (
                         <div>
                             <div className="bg-blue-50 border border-blue-200 p-4 rounded mb-6 text-sm text-blue-800">
                                 This user is a <strong>Partner</strong>. They can view projects and tickets for the clients listed below.
                             </div>
-                            
                             <div className="mb-6 flex gap-2">
                                 <select id="assign_client_select" className="flex-1 p-2 border rounded">
                                     <option value="">Select a client to assign...</option>
@@ -267,7 +264,6 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
                                 </select>
                                 <button onClick={() => handleAssign(document.getElementById('assign_client_select').value)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold">Assign</button>
                             </div>
-
                             <div className="bg-white border rounded overflow-hidden">
                                 {managed.length === 0 ? <div className="p-6 text-center text-slate-400">No clients assigned yet.</div> : (
                                     <table className="w-full text-sm text-left">
@@ -363,10 +359,63 @@ window.ClientsView = ({ token, role }) => {
 
 window.SettingsView = ({ token, role }) => {
     const Icons = window.Icons;
-    const [activeTab, setActiveTab] = React.useState('data_sync'); const [syncing, setSyncing] = React.useState(false); const [logs, setLogs] = React.useState([]);
+    const [activeTab, setActiveTab] = React.useState('data_sync'); 
+    const [syncing, setSyncing] = React.useState(false); 
+    const [logs, setLogs] = React.useState([]);
+
     if (role !== 'admin') return <div className="p-10 text-center text-slate-500">Access Restricted</div>;
-    const handleMasterSync = async () => { setSyncing(true); setLogs(prev => ["[START] Starting Master Sync...", ...prev]); try { const res1 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); if (res1.logs) setLogs(prev => [...res1.logs, ...prev]); setLogs(prev => [`[CRM] ${res1.message || 'Done'}`, ...prev]); } catch (e) { setLogs(prev => [`[ERROR] CRM Sync Failed`, ...prev]); } try { const res2 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); if (res2.logs) setLogs(prev => [...res2.logs, ...prev]); setLogs(prev => [`[STRIPE] ${res2.message || 'Done'}`, ...prev]); } catch (e) { setLogs(prev => [`[ERROR] Stripe Sync Failed`, ...prev]); } setSyncing(false); setLogs(prev => ["[DONE] Master Sync Complete.", ...prev]); };
-    return (<div className="space-y-6 animate-fade-in"><div className="flex gap-4 border-b border-slate-200 pb-1"><button onClick={() => setActiveTab('data_sync')} className={`px-4 py-2 text-sm font-bold capitalize whitespace-nowrap ${activeTab === 'data_sync' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400 hover:text-slate-600'}`}>Data Sync</button></div>{activeTab === 'data_sync' && (<div className="bg-white p-8 rounded-xl border shadow-sm max-w-4xl"><h3 className="text-xl font-bold text-[#2c3259] mb-2">Data Synchronization</h3><p className="text-sm text-slate-500 mb-6">Pull data from SwipeOne (CRM) and Stripe (Billing) to keep the portal up to date.</p><div className="flex gap-4 mb-6"><button onClick={handleMasterSync} disabled={syncing} className="bg-[#2c3259] text-white px-6 py-3 rounded-lg font-bold shadow-lg hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2">{syncing ? <Icons.Loader className="animate-spin"/> : <Icons.Sparkles/>} Run Master Sync</button></div><div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-green-400 h-64 overflow-y-auto shadow-inner">{logs.length === 0 ? <span className="text-slate-500">// Ready to sync...</span> : logs.map((l, i) => <div key={i} className="mb-1">{l}</div>)}</div></div>)}</div>);
+
+    const handleMasterSync = async () => { 
+        setSyncing(true); 
+        setLogs(prev => ["[START] Starting Master Sync...", ...prev]); 
+        
+        // 1. CRM Sync
+        try { 
+            const res1 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); 
+            if (res1.logs) setLogs(prev => [...res1.logs, ...prev]); 
+            setLogs(prev => [`[CRM] ${res1.message || 'Done'}`, ...prev]); 
+        } catch (e) { setLogs(prev => [`[ERROR] CRM Sync Failed`, ...prev]); } 
+        
+        // 2. Stripe Sync
+        try { 
+            const res2 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); 
+            if (res2.logs) setLogs(prev => [...res2.logs, ...prev]); 
+            setLogs(prev => [`[STRIPE] ${res2.message || 'Done'}`, ...prev]); 
+        } catch (e) { setLogs(prev => [`[ERROR] Stripe Sync Failed`, ...prev]); } 
+        
+        // 3. NEW: Merge Duplicates
+        try {
+            setLogs(prev => [`[MERGE] Scanning for duplicates...`, ...prev]);
+            const res3 = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'merge_duplicates', token }) });
+            if (res3.logs) setLogs(prev => [...res3.logs, ...prev]);
+            setLogs(prev => [`[MERGE] ${res3.message || 'Cleanup Complete'}`, ...prev]);
+        } catch (e) { setLogs(prev => [`[ERROR] Merge Logic Failed`, ...prev]); }
+
+        setSyncing(false); 
+        setLogs(prev => ["[DONE] Master Sync Complete.", ...prev]); 
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="flex gap-4 border-b border-slate-200 pb-1">
+                <button onClick={() => setActiveTab('data_sync')} className={`px-4 py-2 text-sm font-bold capitalize whitespace-nowrap ${activeTab === 'data_sync' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400 hover:text-slate-600'}`}>Data Sync</button>
+            </div>
+            {activeTab === 'data_sync' && (
+                <div className="bg-white p-8 rounded-xl border shadow-sm max-w-4xl">
+                    <h3 className="text-xl font-bold text-[#2c3259] mb-2">Data Synchronization</h3>
+                    <p className="text-sm text-slate-500 mb-6">Pull data from SwipeOne (CRM) and Stripe (Billing), then automatically merge duplicate client records.</p>
+                    <div className="flex gap-4 mb-6">
+                        <button onClick={handleMasterSync} disabled={syncing} className="bg-[#2c3259] text-white px-6 py-3 rounded-lg font-bold shadow-lg hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2">
+                            {syncing ? <Icons.Loader className="animate-spin"/> : <Icons.Sparkles/>} Run Master Sync
+                        </button>
+                    </div>
+                    <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs text-green-400 h-64 overflow-y-auto shadow-inner">
+                        {logs.length === 0 ? <span className="text-slate-500">// Ready to sync...</span> : logs.map((l, i) => <div key={i} className="mb-1">{l}</div>)}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 };
 
 window.FilesView = ({ token, role }) => { 
@@ -448,43 +497,36 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     const Icons = window.Icons;
     const [projects, setProjects] = React.useState([]); 
     const [active, setActive] = React.useState(null);
-
+    
     const fetchProjects = () => {
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }).then(r => setProjects(r.projects||[]));
     };
-
+    
     React.useEffect(() => { fetchProjects(); }, [token]);
-
+    
     const handleDelete = async (id) => {
         if(!confirm('Delete this project?')) return;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_project', token, project_id: id }) });
-        if(res.status === 'success') { fetchProjects(); } 
-        else { alert('Error deleting: ' + res.message); }
+        if(res.status === 'success') {
+            fetchProjects();
+        } else {
+            alert('Error deleting project: ' + res.message);
+        }
     };
-
+    
     const handleUpdateStatus = async (id, newStatus) => {
         const project = projects.find(p => p.id === id);
         const health_score = project?.health_score || 0;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_project_status', token, project_id: id, status: newStatus, health_score }) });
-        if(res.status === 'success') { fetchProjects(); }
-        else { alert('Error updating: ' + res.message); }
+        if(res.status === 'success') {
+            fetchProjects();
+        } else {
+            alert('Error updating project: ' + res.message);
+        }
     };
-
+    
     if(active) return <TaskManager project={active} token={token} onClose={()=>setActive(null)} />;
-    return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {projects.map(p=>(
-                <ProjectCard 
-                    key={p.id} 
-                    project={p} 
-                    isAdmin={role==='admin'} 
-                    setActiveProject={setActive} 
-                    onDelete={handleDelete} 
-                    onUpdateStatus={handleUpdateStatus} 
-                />
-            ))}
-        </div>
-    );
+    return (<div className="grid grid-cols-1 md:grid-cols-3 gap-6">{projects.map(p=><ProjectCard key={p.id} project={p} isAdmin={role==='admin'} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />)}</div>);
 };
 
 window.OnboardingView = ({ token }) => { const [step, setStep] = React.useState(1); const [submitting, setSubmitting] = React.useState(false); const handleSubmit = async (e) => { e.preventDefault(); if (step < 3) { setStep(step + 1); return; } setSubmitting(true); const formData = new FormData(e.target); const data = Object.fromEntries(formData.entries()); data.action = 'submit_onboarding'; data.onboarding_token = token; const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(data) }); if (res.status === 'success') { alert(res.message); window.location.href = '/portal/'; } else { alert("Error: " + res.message); setSubmitting(false); } }; return (<div className="min-h-screen bg-slate-50 flex items-center justify-center p-4"><div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden border border-slate-100"><div className="bg-[#2c3259] p-6 text-center"><img src={LOGO_URL} alt="WandWeb" className="h-16 mx-auto" /><p className="text-slate-300 mt-2">Project Onboarding</p></div><form onSubmit={handleSubmit} className="p-8">{step === 1 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">G'Day! Your Details</h2><div><label className="block text-sm font-bold text-slate-600">Prefix</label><select name="prefix" className="w-full p-3 border rounded bg-slate-50"><option>Mr</option><option>Mrs</option><option>Ms</option></select></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-slate-600">First Name *</label><input name="first_name" className="w-full p-3 border rounded" required/></div><div><label className="block text-sm font-bold text-slate-600">Last Name *</label><input name="last_name" className="w-full p-3 border rounded" required/></div></div><div><label className="block text-sm font-bold text-slate-600">Email *</label><input name="email" type="email" className="w-full p-3 border rounded" required/></div><div><label className="block text-sm font-bold text-slate-600">Phone Number *</label><input name="phone" className="w-full p-3 border rounded" required/></div></div>)}{step === 2 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">Business Details</h2><div><label className="block text-sm font-bold text-slate-600">Business Name</label><input name="business_name" className="w-full p-3 border rounded"/></div><div><label className="block text-sm font-bold text-slate-600">Address</label><textarea name="address" className="w-full p-3 border rounded h-20"></textarea></div><div><label className="block text-sm font-bold text-slate-600">Position</label><input name="position" className="w-full p-3 border rounded" placeholder="Your position within the Business"/></div><div><label className="block text-sm font-bold text-slate-600">Website</label><input name="website" className="w-full p-3 border rounded" placeholder="Current URL (if any)"/></div></div>)}{step === 3 && (<div className="space-y-4 animate-fade-in"><h2 className="text-xl font-bold text-slate-800 border-b pb-2 mb-4">How can we best help you?</h2><div><label className="block text-sm font-bold text-slate-600">Project Goals</label><textarea name="goals" className="w-full p-3 border rounded h-24"></textarea></div><div><label className="block text-sm font-bold text-slate-600">Scope of Work</label><textarea name="scope" className="w-full p-3 border rounded h-24"></textarea></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-sm font-bold text-slate-600">Timeline</label><input name="timeline" className="w-full p-3 border rounded"/></div><div><label className="block text-sm font-bold text-slate-600">Budget</label><input name="budget" className="w-full p-3 border rounded"/></div></div><div><label className="block text-sm font-bold text-slate-600">Challenges</label><textarea name="challenges" className="w-full p-3 border rounded h-20"></textarea></div></div>)}<div className="mt-8 flex justify-between">{step > 1 && <button type="button" onClick={() => setStep(step - 1)} className="px-6 py-2 text-slate-600 font-bold">Back</button>}<button type="submit" disabled={submitting} className="ml-auto bg-purple-700 text-white px-8 py-3 rounded-lg font-bold shadow hover:bg-purple-800 transition-colors">{submitting ? 'Submitting...' : (step === 3 ? 'Finish & Submit' : 'Next')}</button></div></form></div></div>); };
@@ -768,3 +810,4 @@ const CreateTicketModal = ({ token, onClose }) => {
         </div>
     );
 };
+}
