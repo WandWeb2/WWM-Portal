@@ -2,6 +2,64 @@
 // /api/modules/clients.php (Updated AI Logic)
 
 // ... (Keep handleGetClients, handleGetClientDetails, handleCreateClient, handleUpdateClient, handleSendOnboardingLink, handleSubmitOnboarding exactly as they were) ...
+// =============================================================================
+// Wandering Webmaster Custom Component
+// Agency: Wandering Webmaster (wandweb.co)
+// Client: Portal Architecture
+// Version: 30.2
+// =============================================================================
+// --- VERSION HISTORY ---
+// 30.1 - Existing Logic
+// 30.2 - Added syncClientToExternal and handleClientSelfUpdate
+
+// [HELPER] Sync local user data to Stripe & CRM
+function syncClientToExternal($pdo, $uid, $secrets) {
+    $s = $pdo->prepare("SELECT * FROM users WHERE id=?"); 
+    $s->execute([$uid]); 
+    $u = $s->fetch();
+    if (!$u) return;
+
+    // 1. Sync to Stripe (if connected)
+    if(!empty($u['stripe_id'])) {
+        stripeRequest($secrets, 'POST', "customers/{$u['stripe_id']}", [
+            'name' => $u['full_name'],
+            'phone' => $u['phone'],
+            'email' => $u['email'],
+            'metadata' => ['business_name' => $u['business_name']]
+        ]);
+    }
+
+    // 2. Sync to SwipeOne CRM
+    pushToSwipeOne($secrets, 'contacts', [
+        'email' => $u['email'],
+        'firstName' => $u['full_name'],
+        'phone' => $u['phone'],
+        'properties' => ['business_name' => $u['business_name']]
+    ]);
+}
+
+// [NEW] Client Self-Service Update
+function handleClientSelfUpdate($pdo, $input, $secrets) {
+    $user = verifyAuth($input);
+    // Strict ID check: Users can only update themselves
+    $uid = $user['uid'];
+    
+    $full_name = strip_tags($input['full_name']);
+    $business = strip_tags($input['business_name']);
+    $phone = strip_tags($input['phone']);
+    $address = strip_tags($input['address']);
+    $website = strip_tags($input['website']);
+    $position = strip_tags($input['position']);
+
+    // Update DB
+    $pdo->prepare("UPDATE users SET full_name=?, business_name=?, phone=?, address=?, website=?, position=? WHERE id=?")
+        ->execute([$full_name, $business, $phone, $address, $website, $position, $uid]);
+
+    // Trigger External Sync
+    syncClientToExternal($pdo, $uid, $secrets);
+
+    sendJson('success', 'Profile Updated & Synced');
+}
 function handleGetClients($pdo,$i){
     verifyAuth($i); ensureUserSchema($pdo);
     // Updated to show Partners too
@@ -57,6 +115,8 @@ function handleCreateClient($pdo,$i,$s){
 function handleUpdateClient($pdo, $input, $secrets) {
     $user = verifyAuth($input); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
     $pdo->prepare("UPDATE users SET full_name=?, email=?, business_name=?, phone=?, status=? WHERE id=?")->execute([$input['full_name'], $input['email'], $input['business_name'], $input['phone'], $input['status'], (int)$input['client_id']]);
+    // ADD THIS LINE:
+    syncClientToExternal($pdo, (int)$input['client_id'], $secrets);
     sendJson('success', 'Updated');
 }
 
@@ -183,5 +243,13 @@ function handleUpdateSettings($pdo, $i) {
         $stmt->execute([$key, $value]);
     }
     sendJson('success', 'Settings saved');
+}
+
+// [OPTIONAL] Self profile fetch for modal population
+function handleGetMyProfile($pdo, $input) {
+    $u = verifyAuth($input);
+    $stmt = $pdo->prepare("SELECT full_name, business_name, email, phone, website, address, position FROM users WHERE id = ?");
+    $stmt->execute([$u['uid']]);
+    sendJson('success', 'Profile Loaded', ['profile' => $stmt->fetch()]);
 }
 ?>

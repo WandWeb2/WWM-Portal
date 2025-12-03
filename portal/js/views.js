@@ -753,25 +753,42 @@ window.OnboardingView = ({ token }) => { const [step, setStep] = React.useState(
 window.ClientDashboard = ({ name, setView, token }) => { // Note: 'token' added to props
     const Icons = window.Icons;
     const [stats, setStats] = React.useState({ projects: [], invoices: [] });
+    const [clientData, setClientData] = React.useState(null); // Store full client profile
+    const [showProfile, setShowProfile] = React.useState(false);
     
-    // Fetch data for Second Mate context
     React.useEffect(() => {
-        // We use billing overview to get invoices
+        // Fetch Billing/Projects Stats
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_billing_overview', token }) })
             .then(r => r.status==='success' && setStats(prev => ({ ...prev, invoices: r.invoices || [] })));
-            
-        // We get projects
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) })
             .then(r => r.status==='success' && setStats(prev => ({ ...prev, projects: r.projects || [] })));
+            
+        // We will fetch profile on demand when opening the modal
     }, [token]);
+
+    const handleEditProfile = async () => {
+        // Try to fetch self profile for better prefill
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_my_profile', token }) });
+        if (res.status === 'success') {
+            setClientData(res.profile || { full_name: name, business_name: '', phone: '', website: '', address: '', position: '' });
+        } else {
+            setClientData({ full_name: name, business_name: '', phone: '', website: '', address: '', position: '' });
+        }
+        setShowProfile(true);
+    };
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {/* Pass 'role="client"' to switch to Second Mate persona */}
             <window.FirstMate stats={stats.invoices} projects={stats.projects} token={token} role="client" />
             
-            <div className="bg-[#2c3259] text-white p-8 rounded-2xl shadow-lg">
-                <h2 className="text-3xl font-bold">Welcome, {(name || 'Client').split(' ')[0]}!</h2>
+            <div className="bg-[#2c3259] text-white p-8 rounded-2xl shadow-lg flex justify-between items-center">
+                <div>
+                    <h2 className="text-3xl font-bold">Welcome, {(name || 'Client').split(' ')[0]}!</h2>
+                    <p className="text-white/60 text-sm mt-1">Manage your projects and billing.</p>
+                </div>
+                <button onClick={handleEditProfile} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
+                    <Icons.Settings size={16}/> My Profile
+                </button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -783,6 +800,97 @@ window.ClientDashboard = ({ name, setView, token }) => { // Note: 'token' added 
                     <div className="flex items-center gap-3 mb-4"><div className="p-3 bg-green-100 text-green-600 rounded-lg"><Icons.CreditCard /></div><h3 className="font-bold text-lg text-slate-800">Billing</h3></div>
                     <p className="text-sm text-slate-500">View Invoices</p>
                 </div>
+            </div>
+
+            {showProfile && (
+                <ClientProfileModal 
+                    token={token} 
+                    clientData={clientData || { full_name: name, business_name: '', phone: '', website: '', address: '', position: '' }} 
+                    onClose={() => setShowProfile(false)} 
+                />
+            )}
+        </div>
+    );
+};
+
+// =============================================================================
+// Wandering Webmaster Custom Component
+// Version: 30.2 - Added ClientProfileModal
+// =============================================================================
+
+const ClientProfileModal = ({ token, clientData, onClose }) => {
+    const Icons = window.Icons;
+    const [loading, setLoading] = React.useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        const f = new FormData(e.target);
+        const payload = {
+            action: 'client_self_update',
+            token: token,
+            full_name: f.get('full_name'),
+            business_name: f.get('business_name'),
+            phone: f.get('phone'),
+            website: f.get('website'),
+            address: f.get('address'),
+            position: f.get('position')
+        };
+        
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+        setLoading(false);
+        if (res.status === 'success') {
+            alert("Profile Updated & Synced to external systems.");
+            onClose();
+            window.location.reload(); // Refresh to show new name
+        } else {
+            alert(res.message);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden">
+                <div className="bg-[#2c3259] p-4 flex justify-between items-center text-white">
+                    <h3 className="font-bold flex items-center gap-2"><Icons.Settings size={18}/> Edit My Profile</h3>
+                    <button onClick={onClose}><Icons.Close/></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Full Name</label>
+                            <input name="full_name" defaultValue={clientData.full_name} className="w-full p-2 border rounded" required/>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Business Name</label>
+                            <input name="business_name" defaultValue={clientData.business_name} className="w-full p-2 border rounded" required/>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Phone</label>
+                        <input name="phone" defaultValue={clientData.phone} className="w-full p-2 border rounded"/>
+                        <p className="text-[10px] text-slate-400 mt-1">This will sync to your billing profile.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Website</label>
+                            <input name="website" defaultValue={clientData.website} className="w-full p-2 border rounded"/>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Position</label>
+                            <input name="position" defaultValue={clientData.position} className="w-full p-2 border rounded"/>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Address</label>
+                        <textarea name="address" defaultValue={clientData.address} className="w-full p-2 border rounded h-20"></textarea>
+                    </div>
+                    <div className="pt-2">
+                        <button disabled={loading} className="w-full bg-[#2c3259] text-white py-3 rounded-lg font-bold shadow hover:bg-[#1e7e8b] transition-colors">
+                            {loading ? 'Syncing...' : 'Save & Sync Profile'}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     );

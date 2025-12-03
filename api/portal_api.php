@@ -116,6 +116,7 @@ try {
         case 'get_client_details': handleGetClientDetails($pdo, $input, $secrets); break;
         case 'create_client': handleCreateClient($pdo, $input, $secrets); break;
         case 'update_client': handleUpdateClient($pdo, $input, $secrets); break;
+        case 'client_self_update': handleClientSelfUpdate($pdo, $input, $secrets); break;
 
         case 'update_user_role': handleUpdateUserRole($pdo, $input); break; // NEW
         case 'assign_client_partner': handleAssignClientToPartner($pdo, $input); break; // NEW
@@ -125,6 +126,7 @@ try {
         case 'import_crm_clients': handleImportCRMClients($pdo, $input, $secrets); break;
         case 'import_stripe_clients': handleImportStripeClients($pdo, $input, $secrets); break;
         case 'ai_request': handleAI($input, $secrets); break;
+        case 'get_my_profile': handleGetMyProfile($pdo, $input); break;
         
         // Settings
         case 'get_settings': handleGetSettings($pdo, $input); break;
