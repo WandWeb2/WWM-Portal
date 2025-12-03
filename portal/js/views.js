@@ -13,38 +13,53 @@ const arrayMove = (arr, from, to) => {
     const res = Array.from(arr); 
     const [removed] = res.splice(from, 1); 
     res.splice(to, 0, removed); 
-    return res; 
-};
-
-// --- LOCAL SUB-COMPONENTS ---
-
-const ProjectCard = ({ project, isAdmin, setActiveProject, onDelete, onUpdateStatus }) => {
-    const Icons = window.Icons;
-    
-    // Debugging: If you don't see the button, check the console for this log
-    // console.log("Rendering Card:", project.id, "IsAdmin:", isAdmin);
-
     return (
-        <div className="bg-white p-6 rounded-xl border shadow-sm cursor-pointer hover:border-blue-400 transition-colors group" onClick={()=>setActiveProject(project)}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {projects.map(p=>(
+                <ProjectCard 
+                    key={p.id} 
+                    project={p} 
+                    role={role} 
+                    setActiveProject={setActive} 
+                    onDelete={handleDelete} 
+                    onUpdateStatus={handleUpdateStatus} 
+                />
+            ))}
+        </div>
+    );
             <div className="flex justify-between items-start mb-4">
                 <div>
                     <h4 className="font-bold text-slate-800">{project.title}</h4>
-                    <p className="text-xs text-slate-500">{isAdmin ? (project.client_name || 'Unassigned') : 'Active Project'}</p>
+                    <p className="text-xs text-slate-500">{isManager ? (project.client_name || 'Unassigned') : 'Active Project'}</p>
                 </div>
-                <div className="flex gap-2">
-                    <span className={`px-2 py-1 text-[10px] uppercase font-bold rounded ${project.status==='active'?'bg-green-100 text-green-700':'bg-slate-100'}`}>{project.status}</span>
-                    {isAdmin && <button onClick={(e)=>{e.stopPropagation(); onDelete(project.id)}} className="text-red-300 hover:text-red-500"><Icons.Trash size={14}/></button>}
+                
+                {/* ADMINISTRATIVE ICONS (Top Right) */}
+                <div className="flex gap-1">
+                    <span className={`px-2 py-1 text-[10px] uppercase font-bold rounded mr-1 ${project.status==='active'?'bg-green-100 text-green-700':'bg-slate-100'}`}>{project.status}</span>
+                    
+                    {isAdmin && (
+                        <>
+                            <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'archived')}} className="text-slate-300 hover:text-blue-500 p-1 rounded hover:bg-blue-50" title="Archive">
+                                <Icons.Archive size={16}/>
+                            </button>
+                            <button onClick={(e)=>{e.stopPropagation(); onDelete(project.id)}} className="text-slate-300 hover:text-red-500 p-1 rounded hover:bg-red-50" title="Delete">
+                                <Icons.Trash size={16}/>
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
+            
             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mb-2">
                 <div className={`h-full ${project.health_score < 40 ? 'bg-red-500' : 'bg-green-500'}`} style={{width: project.health_score + '%'}}></div>
             </div>
-            {isAdmin && (
+
+            {/* MANAGER CONTROLS (Bottom) - No Archive button here anymore */}
+            {isManager && (
                 <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'active')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-green-50 hover:text-green-600">Active</button>
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'stalled')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-orange-50 hover:text-orange-600">Stall</button>
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'complete')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600">Done</button>
-                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'archived')}} className="text-[10px] bg-slate-200 text-slate-600 px-2 py-1 rounded hover:bg-slate-300 hover:text-slate-800 font-bold">ARCHIVE</button>
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'active')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-green-50 hover:text-green-600 border border-transparent hover:border-green-200">Set Active</button>
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'stalled')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-orange-50 hover:text-orange-600 border border-transparent hover:border-orange-200">Stall</button>
+                    <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'complete')}} className="text-[10px] bg-slate-50 px-2 py-1 rounded hover:bg-blue-50 hover:text-blue-600 border border-transparent hover:border-blue-200">Mark Done</button>
                 </div>
             )}
         </div>

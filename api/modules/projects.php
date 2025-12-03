@@ -33,7 +33,10 @@ function handleCreateProject($pdo,$i){
 }
 
 function handleUpdateProjectStatus($pdo,$i,$s){
-    $u=verifyAuth($i); if($u['role']!=='admin')sendJson('error','Unauthorized');
+    $u=verifyAuth($i); 
+    // Allow Admin OR Partner to update status
+    if($u['role']!=='admin' && $u['role']!=='partner') sendJson('error','Unauthorized');
+    
     $pdo->prepare("UPDATE projects SET status=?, health_score=? WHERE id=?")->execute([strip_tags($i['status']),(int)$i['health_score'],(int)$i['project_id']]);
     sendJson('success','Updated');
 }
