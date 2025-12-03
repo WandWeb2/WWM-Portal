@@ -129,7 +129,7 @@ const TaskManager = ({ project, token, onClose }) => {
                                             onClick={(e) => { e.stopPropagation(); toggleTask(task.id, isChecked); }} 
                                             className={`w-6 h-6 rounded-sm border flex items-center justify-center transition-colors ${isChecked ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300'}`}
                                         >
-                                            {isChecked && <Icons.Check size={14}/>} 
+                                            {isChecked ? <Icons.Check size={14}/> : null} 
                                         </button>
                                         <span className={`flex-1 ${isChecked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{task.title}</span>
                                         <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -565,7 +565,23 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     
     React.useEffect(() => { fetchProjects(); }, [token]);
     
-    // Listen for deep-link open_project events
+    // 1. LocalStorage Deep Link Handler
+    React.useEffect(() => {
+        if (projects.length === 0) return; 
+        const pending = localStorage.getItem('pending_nav');
+        if(pending) {
+            const nav = JSON.parse(pending);
+            if(nav.view === 'projects' && nav.target_id) {
+                const target = projects.find(p => p.id == nav.target_id);
+                if(target) {
+                    setActive(target);
+                    localStorage.removeItem('pending_nav');
+                }
+            }
+        }
+    }, [projects]);
+    
+    // 2. Old Event Listener to handle direct clicks on cards/buttons
     React.useEffect(() => {
         const handleOpen = (e) => {
             const targetId = parseInt(e.detail);
@@ -641,6 +657,7 @@ window.ClientDashboard = ({ name, setView, token }) => { // Note: 'token' added 
 };
 
 // --- SUPPORT & TICKETING VIEW ---
+// --- SUPPORT & TICKETING VIEW ---
 window.SupportView = ({ token, role }) => {
     const Icons = window.Icons;
     const [tickets, setTickets] = React.useState([]);
@@ -656,6 +673,22 @@ window.SupportView = ({ token, role }) => {
     };
 
     React.useEffect(() => { fetchTickets(); }, [token]);
+
+    // Deep Link Handler: Check localStorage for pending navigation
+    React.useEffect(() => {
+        if (tickets.length === 0) return; 
+        const pending = localStorage.getItem('pending_nav');
+        if(pending) {
+            const nav = JSON.parse(pending);
+            if(nav.view === 'support' && nav.target_id) {
+                const target = tickets.find(t => t.id == nav.target_id);
+                if(target) {
+                    setActiveTicket(target);
+                    localStorage.removeItem('pending_nav');
+                }
+            }
+        }
+    }, [tickets]);
 
     if (loading) return <div className="p-8 text-center"><Icons.Loader/></div>;
 

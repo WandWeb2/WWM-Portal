@@ -172,12 +172,12 @@ window.ProductSelector = ({ token, selectedItems, onChange, filterMode = 'all' }
     );
 };
 
-// FIRST MATE AI WIDGET
+// FIRST MATE AI WIDGET (Using new ticket API + Professional Persona)
 window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin' }) => {
-    const [insight, setInsight] = React.useState("Scanning data frequencies...");
-    
+    const [insight, setInsight] = React.useState("Analyzing portfolio...");
+    const [processing, setProcessing] = React.useState(false);
+    const Icons = window.Icons;
     const isFirstMate = role === 'admin';
-    const name = "WandWeb AI"; 
     const accentColor = isFirstMate ? "text-[#2493a2]" : "text-orange-400";
 
     React.useEffect(() => { 
@@ -194,49 +194,53 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin' }) => {
                 
                 const prompt = `Review this data: ${JSON.stringify(dataContext)}. Provide a 1-sentence executive summary.`;
                 
-                const res = await window.safeFetch('/api/portal_api.php', { 
+                const res = await window.safeFetch(API_URL, { 
                     method: 'POST', 
                     body: JSON.stringify({ action: 'ai_request', token, prompt, data_context: dataContext }) 
                 }); 
                 
-                if (res.status === 'success' && res.text) {
-                    setInsight(res.text);
-                } else {
-                    setInsight(`System Ready.`);
-                }
-            } catch (e) { 
-                setInsight("System Offline."); 
-            } 
+                if (res.status === 'success' && res.text) setInsight(res.text);
+            } catch (e) { setInsight("System Ready."); } 
         }; 
-        
         generateInsight(); 
-    }, [stats, projects, token, name]);
+    }, [stats, projects, token]);
 
-    const handleJumpToSupport = () => {
-        window.dispatchEvent(new CustomEvent('switch_view', { detail: 'support' }));
+    const handleDeepDive = async () => {
+        if(processing) return;
+        setProcessing(true);
+        // 1. Create a ticket based on this insight to start the thread
+        const res = await window.safeFetch(API_URL, { 
+            method: 'POST', 
+            body: JSON.stringify({ action: 'create_ticket_from_insight', token, insight }) 
+        });
+        
+        if(res.status === 'success') {
+            // 2. Set Navigation Target in Local Storage for persistent deep linking
+            localStorage.setItem('pending_nav', JSON.stringify({ view: 'support', target_id: res.ticket_id }));
+            
+            // 3. Trigger view switch
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'support' }));
+        } else {
+            alert("Failed to create support thread: " + res.message);
+        }
+        setProcessing(false);
     };
 
     return (
-        <div className="bg-[#2c3259] text-white rounded-xl shadow-xl border border-slate-600 relative overflow-hidden mb-8 transition-all duration-300 cursor-pointer hover:shadow-2xl hover:border-[#2493a2]" onClick={handleJumpToSupport}>
+        <div className="bg-[#2c3259] text-white rounded-xl shadow-xl border border-slate-600 relative overflow-hidden mb-8 transition-all duration-300 cursor-pointer hover:shadow-2xl hover:border-[#2493a2]" onClick={handleDeepDive}>
             <div className="p-6 relative z-10">
                 <div className="flex items-center justify-between">
                     <div className="flex gap-4 items-start">
-                        <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center shrink-0 border border-white/20 overflow-hidden relative">
-                            <div className="absolute inset-0 bg-green-500/20 animate-pulse"></div>
-                            <img src="https://wandweb.co/wp-content/uploads/2022/03/DSmale.png" className="w-full h-full object-cover relative z-10" alt="AI"/>
+                         <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center shrink-0 border border-white/20 overflow-hidden">
+                            <img src="https://wandweb.co/wp-content/uploads/2022/03/DSmale.png" className="w-full h-full object-cover" alt="AI"/>
                         </div>
                         <div>
-                            <div className={`flex items-center gap-2 mb-1 ${accentColor} font-bold text-xs tracking-widest uppercase`}>
-                                {name}
-                            </div>
+                            <div className={`flex items-center gap-2 mb-1 ${accentColor} font-bold text-xs tracking-widest uppercase`}>WandWeb AI</div>
                             <p className="text-lg font-medium font-serif italic opacity-90 leading-relaxed pr-8">"{insight}"</p>
                             <p className={`text-xs ${accentColor} mt-2 font-bold uppercase tracking-wide flex items-center gap-2`}>
-                                <window.Icons.MessageSquare size={14}/> Click to start support thread
+                                <Icons.MessageSquare size={14}/> {processing ? "Creating Support Session..." : "Click to Discuss / Escalate"}
                             </p>
                         </div>
-                    </div>
-                    <div className="text-slate-400 hover:text-white">
-                        <window.Icons.ChevronRight size={24} />
                     </div>
                 </div>
             </div>
@@ -244,13 +248,15 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin' }) => {
     );
 };
 
+// NOTIFICATION BELL (Updated for Deep Linking and Name Display)
 window.NotificationBell = ({ token }) => {
     const [list, setList] = React.useState([]); 
     const [open, setOpen] = React.useState(false); 
     const [unread, setUnread] = React.useState(0);
+    const Icons = window.Icons;
     
     const fetchNotifs = async () => { 
-        const r = await window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ action: 'get_notifications', token }) }); 
+        const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_notifications', token }) }); 
         if (r && r.status === 'success') { 
             setList(r.notifications || []); 
             setUnread((r.notifications || []).filter(n => n.is_read == 0).length); 
@@ -266,16 +272,18 @@ window.NotificationBell = ({ token }) => {
     const handleInteract = async (n) => { 
         // 1. Mark Read
         if(n.is_read == 0) {
-            await window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ action: 'mark_read', token, id: n.id }) }); 
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'mark_read', token, id: n.id }) }); 
             setUnread(prev => Math.max(0, prev - 1));
         }
         
-        // 2. Jump (Deep Link)
-        if (n.target_type === 'project' && n.target_id) {
-            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); // Go to view
-            setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('open_project', { detail: n.target_id })); // Open Modal
-            }, 100);
+        // 2. Handle Deep Linking via "Pending Navigation" Pattern
+        if (n.target_type && n.target_id) {
+            const viewName = n.target_type === 'project' ? 'projects' : n.target_type + 's';
+            const navData = { view: viewName, target_id: n.target_id };
+            localStorage.setItem('pending_nav', JSON.stringify(navData));
+            
+            // Trigger global view switch
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: navData.view }));
         }
         
         setOpen(false);
@@ -284,7 +292,7 @@ window.NotificationBell = ({ token }) => {
     return (
         <div className="relative">
             <button onClick={() => setOpen(!open)} className="relative text-[#2c3259] p-2">
-                <window.Icons.Bell size={24}/>
+                <Icons.Bell size={24}/>
                 {unread > 0 && <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">{unread}</span>}
             </button>
             {open && (
@@ -293,8 +301,11 @@ window.NotificationBell = ({ token }) => {
                     <div className="max-h-80 overflow-y-auto">
                         {list.length === 0 ? <div className="p-4 text-center text-slate-400 text-sm">No notifications</div> : list.map(n => (
                             <div key={n.id} onClick={()=>handleInteract(n)} className={`p-3 border-b text-sm cursor-pointer hover:bg-slate-50 transition-colors ${n.is_read==0?'bg-blue-50 border-l-4 border-l-[#2493a2]':''}`}>
-                                <div className="text-slate-800">{n.message}</div>
-                                <div className="text-[10px] text-slate-400 mt-1">{new Date(n.created_at).toLocaleString()}</div>
+                                <div className="text-slate-800 font-medium mb-1">{n.message}</div>
+                                <div className="text-[10px] text-slate-400 flex justify-between">
+                                    <span>{new Date(n.created_at).toLocaleString()}</span>
+                                    {n.target_type && <span className="uppercase text-[#2493a2] font-bold tracking-wider text-[9px]">View {n.target_type}</span>}
+                                </div>
                             </div>
                         ))}
                     </div>
