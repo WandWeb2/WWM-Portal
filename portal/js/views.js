@@ -991,7 +991,7 @@ window.SupportView = ({ token, role }) => {
                 </div>
             </div>
 
-            {showCreate && <CreateTicketModal token={token} onClose={()=>{setShowCreate(false); fetchTickets();}} />}
+            {showCreate && <CreateTicketModal token={token} role={role} onClose={()=>{setShowCreate(false); fetchTickets();}} />}
         </div>
     );
 };
@@ -1232,29 +1232,25 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     );
 };
 
-const CreateTicketModal = ({ token, onClose }) => {
+const CreateTicketModal = ({ token, onClose, role }) => {
     const Icons = window.Icons;
     const [subject, setSubject] = React.useState("");
     const [suggestion, setSuggestion] = React.useState(null);
     const [clients, setClients] = React.useState([]); 
     const [selectedClient, setSelectedClient] = React.useState(null);
-    const [isAdmin, setIsAdmin] = React.useState(false);
+    const isAdmin = role === 'admin';
     
     // Search State
     const [searchTerm, setSearchTerm] = React.useState("");
     const [isSearching, setIsSearching] = React.useState(false);
 
-    // 1. Check Role & Fetch Clients
+    // Fetch Clients only if Admin
     React.useEffect(() => {
-        const checkRole = async () => {
-            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
-            if (res.status === 'success' && res.clients) {
-                setClients(res.clients);
-                setIsAdmin(true);
-            }
-        };
-        checkRole();
-    }, [token]);
+        if (isAdmin) {
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
+                .then(res => { if (res.status === 'success') setClients(res.clients || []); });
+        }
+    }, [isAdmin, token]);
 
     // Smart Suggestion
     React.useEffect(() => {

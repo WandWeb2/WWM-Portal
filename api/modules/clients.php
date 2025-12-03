@@ -60,11 +60,14 @@ function handleClientSelfUpdate($pdo, $input, $secrets) {
 
     sendJson('success', 'Profile Updated & Synced');
 }
-function handleGetClients($pdo,$i){
-    verifyAuth($i); ensureUserSchema($pdo);
-    // Updated to show Partners too
-    $s=$pdo->query("SELECT id, full_name, email, business_name, phone, website, status, role, created_at FROM users WHERE role IN ('client', 'partner') ORDER BY created_at DESC");
-    sendJson('success','Fetched',['clients'=>$s->fetchAll()]);
+function handleGetClients($pdo, $i) {
+    $u = verifyAuth($i); 
+    // SECURITY FIX: Strictly restrict to Admin
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    
+    ensureUserSchema($pdo);
+    $s = $pdo->query("SELECT id, full_name, email, business_name, phone, website, status, role, created_at FROM users WHERE role IN ('client', 'partner') ORDER BY created_at DESC");
+    sendJson('success', 'Fetched', ['clients' => $s->fetchAll()]);
 }
 
 function handleGetClientDetails($pdo, $input, $secrets) {

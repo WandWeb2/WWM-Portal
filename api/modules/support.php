@@ -38,6 +38,69 @@ function ensureSupportSchema($pdo) {
     try { $pdo->exec("ALTER TABLE ticket_messages ADD COLUMN attachment_path VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
 }
 
+function triggerSupportAI($pdo, $secrets, $ticketId) {
+    if (empty($secrets['GEMINI_API_KEY'])) return;
+
+    // 1. Fetch Context
+    $stmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
+    $stmt->execute([$ticketId]);
+    $ticket = $stmt->fetch();
+    
+    $mStmt = $pdo->prepare("SELECT sender_id, message FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC");
+    $mStmt->execute([$ticketId]);
+    $history = $mStmt->fetchAll();
+    
+    // Build Transcript
+    $transcript = "TICKET SUBJECT: {$ticket['subject']}\n";
+    foreach ($history as $h) {
+        $sender = ($h['sender_id'] == 0) ? "AI" : "CLIENT";
+        $transcript .= "$sender: {$h['message']}\n";
+    }
+
+    // 2. Define Persona based on Status
+    $isEscalated = ($ticket['status'] === 'escalated');
+    $persona = $isEscalated ? "First Mate AI" : "Second Mate AI";
+    
+    $systemPrompt = "You are $persona, a support agent for Wandering Webmaster.
+PROTOCOL:
+1. Be helpful, concise, and professional.
+2. If you are Second Mate and the user seems frustrated or the issue is technical/complex, output exactly: [ESCALATE]
+3. If you are First Mate, reassure them that a human Admin is reviewing it.
+4. Do not start messages with your name.";
+
+    // 3. Call Gemini
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . $secrets['GEMINI_API_KEY'];
+    $payload = json_encode(["contents" => [["parts" => [["text" => $systemPrompt . "\n\nTRANSCRIPT:\n" . $transcript . "\n\nRESPONSE:"]]]]]);
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    $res = json_decode(curl_exec($ch), true);
+    curl_close($ch);
+    
+    $reply = $res['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    $reply = trim($reply);
+
+    if (empty($reply)) return;
+
+    // 4. Handle Logic
+    if (strpos($reply, '[ESCALATE]') !== false) {
+        // Trigger Escalation
+        $cleanReply = str_replace('[ESCALATE]', '', $reply);
+        if (trim($cleanReply)) {
+            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[Second Mate] " . trim($cleanReply)]);
+        }
+        // Call Escalation Handler
+        handleEscalateTicket($pdo, ['token'=>'INTERNAL_OVERRIDE', 'ticket_id'=>$ticketId, 'role'=>'system']); 
+    } else {
+        // Standard Reply
+        $prefix = $isEscalated ? "[First Mate] " : "[Second Mate] ";
+        $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $prefix . $reply]);
+    }
+}
+
 function handleGetTickets($pdo, $i) { 
     $u = verifyAuth($i); ensureSupportSchema($pdo);
 
@@ -125,10 +188,9 @@ function handleCreateTicket($pdo, $i, $s) {
     $secondMateMsg = "[Second Mate] Ahoy! I am Second Mate AI. I've received your request and am analyzing the ship's logs. I will attempt to resolve this immediately. If I cannot, I will signal the First Mate.";
     $stmt->execute([$ticketId, $secondMateMsg]);
     
-    // If created by Client, auto-reply. If created BY Admin FOR Client, notify Client.
+    // If created by Client, trigger AI and notify partner
     if ($u['role'] === 'client') { 
-        $ack = "Message received. We have logged ticket #$ticketId and notified the team."; 
-        $stmt->execute([$ticketId, 0, $ack]); 
+        triggerSupportAI($pdo, $s, $ticketId);
         notifyPartnerIfAssigned($pdo, $u['uid'], "Client {$u['name']} created Ticket #$ticketId");
     } elseif ($ticketOwnerId !== $u['uid']) {
         // Created by Admin/Partner for Client -> Notify Client
@@ -138,7 +200,7 @@ function handleCreateTicket($pdo, $i, $s) {
     sendJson('success', 'Ticket Created'); 
 }
 
-function handleReplyTicket($pdo, $i) { 
+function handleReplyTicket($pdo, $i, $s) { 
     $u = verifyAuth($i); 
     $tid = (int)$i['ticket_id']; 
     $isInternal = ($u['role'] === 'admin' && !empty($i['is_internal'])) ? 1 : 0; 
@@ -148,9 +210,10 @@ function handleReplyTicket($pdo, $i) {
     if ($isInternal) $newStatus = 'open'; 
     $pdo->prepare("UPDATE tickets SET updated_at = NOW(), status = ? WHERE id = ?")->execute([$newStatus, $tid]); 
     
-    // Notify Partner if Client replied
+    // Trigger AI and notify partner if client replied
     if ($u['role'] === 'client') {
-        notifyPartnerIfAssigned($pdo, $u['uid'], "Client {$u['name']} replied to Ticket #$tid");
+        triggerSupportAI($pdo, $s, $tid);
+        notifyPartnerIfAssigned($pdo, $u['uid'], "Client replied to #$tid");
     }
     
     sendJson('success', 'Reply Sent'); 
@@ -246,10 +309,17 @@ function handleCreateTicketFromInsight($pdo, $i) {
 
 
 function handleEscalateTicket($pdo, $input) {
-    $u = verifyAuth($input);
+    // Allow system override for internal AI calls
+    if (($input['role'] ?? '') !== 'system') {
+        $u = verifyAuth($input);
+    }
+
     $ticketId = (int)$input['ticket_id'];
     $pdo->prepare("UPDATE tickets SET status='escalated' WHERE id=?")->execute([$ticketId]);
-    $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[First Mate] First Mate AI here. Second Mate has flagged this for review. I am looping in the Captain (Admin) now. Please stand by for human override."]);
+
+    $msg = "[First Mate] First Mate AI here. Second Mate has flagged this. I've summoned the Captain (Admin). Stand by.";
+    $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $msg]);
+
     createNotification($pdo, 'admin', "Ticket #$ticketId Escalated to First Mate.");
     sendJson('success','Escalated');
 }
