@@ -109,7 +109,14 @@ const App = () => {
         const params = new URLSearchParams(window.location.search);
         if (params.get('action') === 'set_password') setInviteToken(params.get('token')); 
         else if (params.get('action') === 'onboarding') setInviteToken(params.get('token')); 
-        else { const stored = localStorage.getItem('wandweb_session'); if (stored) setSession(JSON.parse(stored)); }
+        else {
+            const stored = localStorage.getItem('wandweb_session');
+            if (stored) {
+                const s = JSON.parse(stored);
+                // Ensure name is present from stored session
+                setSession({ ...s, name: s.name });
+            }
+        }
         
         const switchHandler = (e) => {
             if(e.detail) setView(e.detail);

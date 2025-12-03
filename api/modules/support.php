@@ -90,6 +90,15 @@ function handleGetTicketThread($pdo, $i) {
     if ($u['role'] !== 'admin') { 
         $msgs = array_filter($msgs, function($m) { return $m['is_internal'] == 0; }); 
     } 
+    // Tag personas via prefixes for frontend styling
+    foreach ($msgs as &$m) {
+        if (isset($m['sender_id']) && $m['sender_id'] == 0) {
+            $text = $m['message'] ?? '';
+            if (stripos($text, '[Second Mate]') === 0 || stripos($text, 'Ahoy!') === 0) $m['persona'] = 'second';
+            elseif (stripos($text, '[First Mate]') === 0 || stripos($text, 'First Mate') === 0) $m['persona'] = 'first';
+            else $m['persona'] = 'system';
+        }
+    }
     sendJson('success', 'Thread Loaded', ['messages' => array_values($msgs)]); 
 }
 
@@ -110,6 +119,11 @@ function handleCreateTicket($pdo, $i, $s) {
     // The sender is still the actual logged-in user (Admin/Partner), so the message history is accurate
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, ?, ?)"); 
     $stmt->execute([$ticketId, $u['uid'], strip_tags($i['message'])]); 
+    
+    // System bootstrap message from Second Mate AI
+    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
+    $secondMateMsg = "[Second Mate] Ahoy! I am Second Mate AI. I've received your request and am analyzing the ship's logs. I will attempt to resolve this immediately. If I cannot, I will signal the First Mate.";
+    $stmt->execute([$ticketId, $secondMateMsg]);
     
     // If created by Client, auto-reply. If created BY Admin FOR Client, notify Client.
     if ($u['role'] === 'client') { 
@@ -228,6 +242,16 @@ function handleCreateTicketFromInsight($pdo, $i) {
     ];
 
     sendJson('success', 'Thread Started', ['ticket_id' => $tid, 'initial_messages' => $initialMessages]);
+}
+
+
+function handleEscalateTicket($pdo, $input) {
+    $u = verifyAuth($input);
+    $ticketId = (int)$input['ticket_id'];
+    $pdo->prepare("UPDATE tickets SET status='escalated' WHERE id=?")->execute([$ticketId]);
+    $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[First Mate] First Mate AI here. Second Mate has flagged this for review. I am looping in the Captain (Admin) now. Please stand by for human override."]);
+    createNotification($pdo, 'admin', "Ticket #$ticketId Escalated to First Mate.");
+    sendJson('success','Escalated');
 }
 
 ?>

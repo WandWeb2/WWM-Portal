@@ -658,6 +658,7 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     const [active, setActive] = React.useState(null);
     const [showCreateModal, setShowCreateModal] = React.useState(false);
     const [showArchived, setShowArchived] = React.useState(false);
+    const [initialProjectData, setInitialProjectData] = React.useState(null);
     
     // Fetch Projects AND Clients
     const loadData = () => {
@@ -668,6 +669,17 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     };
     
     React.useEffect(() => { loadData(); }, [token]);
+    
+    // Listen for global open_project_modal from TicketThread
+    React.useEffect(() => {
+        const handler = (e) => {
+            const d = e.detail || {};
+            setInitialProjectData(d);
+            setShowCreateModal(true);
+        };
+        window.addEventListener('open_project_modal', handler);
+        return () => window.removeEventListener('open_project_modal', handler);
+    }, []);
     
     // Deep Link Logic
     React.useEffect(() => {
@@ -728,7 +740,7 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
             {filteredProjects.length === 0 ? (
                 <div className="p-20 text-center border-2 border-dashed rounded-xl text-slate-400">
                     <Icons.Folder size={48} className="mx-auto mb-4"/>
-                    <p>{showArchived ? "No archived projects." : "No active projects. Click 'New Project' to begin."}</p>
+                    <p>{showArchived ? "No archived projects." : (role === 'admin' ? "No active projects. Click 'New Project' to begin." : "No active projects. Contact support to start a new engagement.")}</p>
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -742,7 +754,8 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
                 <CreateProjectModal 
                     clients={clients} 
                     onClose={()=>setShowCreateModal(false)} 
-                    onSubmit={handleCreateProject} 
+                    onSubmit={handleCreateProject}
+                    initialData={initialProjectData}
                 />
             )}
         </div>
@@ -779,7 +792,7 @@ window.ClientDashboard = ({ name, setView, token }) => { // Note: 'token' added 
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <window.FirstMate stats={stats.invoices} projects={stats.projects} token={token} role="client" />
+            <window.FirstMate stats={stats.invoices} projects={stats.projects} token={token} role="client" title="SECOND MATE AI" />
             
             <div className="bg-[#2c3259] text-white p-8 rounded-2xl shadow-lg flex justify-between items-center">
                 <div>
@@ -984,13 +997,20 @@ window.SupportView = ({ token, role }) => {
 };
 
 // NEW SUB-COMPONENT: Create Project Modal with AI & Client Search
-const CreateProjectModal = ({ clients, onClose, onSubmit }) => {
+const CreateProjectModal = ({ clients, onClose, onSubmit, initialData }) => {
     const Icons = window.Icons;
-    const [mode, setMode] = React.useState('manual'); // 'manual' or 'ai'
+    const [mode, setMode] = React.useState(initialData?.notes ? 'ai' : 'manual'); // 'manual' or 'ai'
     const [selectedClient, setSelectedClient] = React.useState(null);
     const [searchTerm, setSearchTerm] = React.useState("");
     const [isSearching, setIsSearching] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
+
+    React.useEffect(() => {
+        if (initialData?.client_id && clients?.length) {
+            const pre = clients.find(c => c.id == initialData.client_id);
+            if (pre) { setSelectedClient(pre); setSearchTerm(pre.full_name); }
+        }
+    }, [initialData, clients]);
 
     const filteredClients = clients.filter(c => 
         (c.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -1081,7 +1101,7 @@ const CreateProjectModal = ({ clients, onClose, onSubmit }) => {
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Project Brief / Notes</label>
-                                <textarea name="notes" className="w-full p-3 border rounded-lg h-32 focus:ring-2 focus:ring-[#dba000] outline-none" placeholder="e.g. Need a 5-page site for a dentist. Needs booking form, gallery, and SEO setup. High priority on mobile." required></textarea>
+                                <textarea name="notes" defaultValue={initialData?.notes || ''} className="w-full p-3 border rounded-lg h-32 focus:ring-2 focus:ring-[#dba000] outline-none" placeholder="e.g. Need a 5-page site for a dentist. Needs booking form, gallery, and SEO setup. High priority on mobile." required></textarea>
                             </div>
                         </div>
                     )}
@@ -1145,6 +1165,12 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
          onUpdate();
     };
 
+    const handleConvertToProject = () => {
+        const history = messages.map(m => `${m.full_name || (m.sender_id===0?'System':'Unknown')}: ${m.message}`).join('\n');
+        const brief = `SOURCE TICKET: ${ticket.subject}\n\nCONTEXT:\n${history}`;
+        window.dispatchEvent(new CustomEvent('open_project_modal', { detail: { client_id: ticket.user_id, notes: brief } }));
+    };
+
     return (
         <>
             <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
@@ -1152,14 +1178,25 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                     <h3 className="font-bold text-lg text-[#2c3259]">{ticket.subject}</h3>
                     <p className="text-xs text-slate-500">Ticket #{ticket.id} • Priority: <span className="uppercase">{ticket.priority}</span></p>
                 </div>
-                {(isAdmin || role === 'client') && ticket.status !== 'closed' && <button onClick={handleClose} className="text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-200">Close Ticket</button>}
+                <div className="flex gap-2 items-center">
+                    {isAdmin && <button onClick={handleConvertToProject} className="text-xs px-3 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700">Generate Project</button>}
+                    {(isAdmin || role === 'client') && ticket.status !== 'closed' && <button onClick={handleClose} className="text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-200">Close Ticket</button>}
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={scrollRef}>
                 {messages.map(m => {
                     const isSystem = m.sender_id == 0;
                     const isInternalMsg = m.is_internal == 1;
-                    const bubbleColor = isInternalMsg ? 'bg-yellow-100 border-yellow-200 text-yellow-900' : (isSystem ? 'bg-slate-100 text-slate-600 text-center w-full text-xs' : (m.role === 'admin' ? 'bg-[#2493a2] text-white' : 'bg-orange-500 text-white'));
+                    let bubbleColor = 'bg-slate-100 text-slate-600 text-center w-full text-xs';
+                    if (isInternalMsg) bubbleColor = 'bg-yellow-100 border-yellow-200 text-yellow-900';
+                    else if (isSystem) {
+                        if (m.persona === 'second') bubbleColor = 'bg-teal-50 border-teal-200 text-teal-800';
+                        else if (m.persona === 'first') bubbleColor = 'bg-indigo-50 border-indigo-200 text-indigo-800';
+                        else bubbleColor = 'bg-slate-100 text-slate-600 text-center w-full text-xs';
+                    } else {
+                        bubbleColor = (m.role === 'admin' ? 'bg-[#2493a2] text-white' : 'bg-orange-500 text-white');
+                    }
                     const align = isSystem ? 'justify-center' : (m.role === role ? 'justify-end' : 'justify-start');
 
                     return (

@@ -207,12 +207,13 @@ window.ProductSelector = ({ token, selectedItems, onChange, filterMode = 'all' }
 };
 
 // FIRST MATE AI WIDGET (Using new ticket API + Professional Persona)
-window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin' }) => {
+window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin', title }) => {
     const [insight, setInsight] = React.useState("Analyzing portfolio...");
     const [processing, setProcessing] = React.useState(false);
     const Icons = window.Icons;
     const isFirstMate = role === 'admin';
     const accentColor = isFirstMate ? "text-[#2493a2]" : "text-orange-400";
+    const displayTitle = title || (role === 'client' ? 'SECOND MATE AI' : 'WANDWEB AI');
 
     React.useEffect(() => { 
         const generateInsight = async () => { 
@@ -273,7 +274,7 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin' }) => {
                             <img src="https://wandweb.co/wp-content/uploads/2022/03/DSmale.png" className="w-full h-full object-cover" alt="AI"/>
                         </div>
                         <div>
-                            <div className={`flex items-center gap-2 mb-1 ${accentColor} font-bold text-xs tracking-widest uppercase`}>WandWeb AI</div>
+                            <div className={`flex items-center gap-2 mb-1 ${accentColor} font-bold text-xs tracking-widest uppercase`}>{displayTitle}</div>
                             <p className="text-sm font-medium font-sans leading-relaxed pr-8 opacity-90">"{insight}"</p>
                             <p className={`text-xs ${accentColor} mt-2 font-bold uppercase tracking-wide flex items-center gap-2`}>
                                 <Icons.MessageSquare size={14}/> {processing ? "Creating Support Session..." : "Click to Discuss / Escalate"}
