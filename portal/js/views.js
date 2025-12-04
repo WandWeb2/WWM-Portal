@@ -98,6 +98,9 @@ const TaskManager = ({ project, token, role, onClose }) => {
     const [details, setDetails] = React.useState({ tasks: [], comments: [] });
     const [msg, setMsg] = React.useState("");
     const [newTask, setNewTask] = React.useState("");
+    const [fileUrl, setFileUrl] = React.useState("");
+    const [fileName, setFileName] = React.useState("");
+    const [showFileUpload, setShowFileUpload] = React.useState(false);
 
     const load = async () => {
         const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_project_details', token, project_id: project.id }) });
@@ -124,6 +127,20 @@ const TaskManager = ({ project, token, role, onClose }) => {
     };
 
     const sendComment = async (e) => { e.preventDefault(); if(!msg.trim()) return; await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'post_comment', token, project_id: project.id, message: msg, target_type: 'project', target_id: 0 }) }); setMsg(""); load(); };
+    
+    const handleFileUpload = async (e) => {
+        e.preventDefault();
+        if (!fileUrl.trim() || !fileName.trim()) return;
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_file', token, project_id: project.id, external_url: fileUrl, filename: fileName, file_type: 'external', filesize: '0' }) });
+        if (res.status === 'success') {
+            setFileUrl("");
+            setFileName("");
+            setShowFileUpload(false);
+            load();
+        } else {
+            alert('Upload failed: ' + res.message);
+        }
+    };
     
     const comments = (details.comments || []).filter(c => c.target_type === 'project');
 
@@ -171,7 +188,24 @@ const TaskManager = ({ project, token, role, onClose }) => {
                     </div>
                 </div>
                 <div className="w-96 flex flex-col bg-slate-50">
-                    <div className="p-4 border-b"><h3 className="font-bold text-slate-800">Project Chat</h3></div>
+                    <div className="p-4 border-b flex justify-between items-center">
+                        <h3 className="font-bold text-slate-800">Project Chat</h3>
+                        <button onClick={() => setShowFileUpload(!showFileUpload)} className="text-slate-500 hover:text-[#2493a2] p-1" title="Upload File">
+                            <Icons.Paperclip size={18}/>
+                        </button>
+                    </div>
+                    {showFileUpload && (
+                        <div className="p-4 border-b bg-white">
+                            <form onSubmit={handleFileUpload} className="space-y-2">
+                                <input className="w-full p-2 border rounded text-xs" placeholder="File name" value={fileName} onChange={e=>setFileName(e.target.value)} required/>
+                                <input className="w-full p-2 border rounded text-xs" placeholder="File URL (e.g., Google Drive link)" value={fileUrl} onChange={e=>setFileUrl(e.target.value)} required/>
+                                <div className="flex gap-2">
+                                    <button type="submit" className="flex-1 bg-[#2493a2] text-white p-2 rounded text-xs font-bold">Upload</button>
+                                    <button type="button" onClick={() => setShowFileUpload(false)} className="px-3 py-2 text-slate-600 text-xs">Cancel</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
                     <div className="flex-1 overflow-y-auto p-4 space-y-3">{comments.map(c => <div key={c.id} className="bg-white p-3 rounded-lg shadow-sm border text-sm"><p className="font-bold text-xs text-[#2c3259] mb-1">{c.author || c.full_name}</p><div className="whitespace-pre-wrap">{window.formatTextWithLinks(c.message)}</div></div>)}</div>
                     <form onSubmit={sendComment} className="p-4 border-t flex gap-2"><input className="flex-1 p-2 border rounded text-sm" value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Send project message..."/><button className="bg-[#dba000] text-white p-2 rounded"><Icons.Send/></button></form>
                 </div>
@@ -451,19 +485,33 @@ window.SettingsView = ({ token, role }) => {
     const Icons = window.Icons;
     const [activeTab, setActiveTab] = React.useState('admin_controls'); 
     const [users, setUsers] = React.useState([]);
+    const [partners, setPartners] = React.useState([]);
+    const [clients, setClients] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
     const [logs, setLogs] = React.useState([]);
+    const [showAssignModal, setShowAssignModal] = React.useState(false);
+    const [selectedPartner, setSelectedPartner] = React.useState(null);
 
     if (role !== 'admin') return <div className="p-10 text-center text-slate-500">Access Restricted</div>;
 
     React.useEffect(() => {
         if (activeTab === 'users') fetchUsers();
+        if (activeTab === 'partners') fetchPartners();
     }, [activeTab]);
 
     const fetchUsers = async () => {
         setLoading(true);
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
         if (res.status === 'success') setUsers(res.clients || []);
+        setLoading(false);
+    };
+
+    const fetchPartners = async () => {
+        setLoading(true);
+        const pRes = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_partners', token }) });
+        if (pRes.status === 'success') setPartners(pRes.partners || []);
+        const cRes = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
+        if (cRes.status === 'success') setClients((cRes.clients || []).filter(c => c.role === 'client'));
         setLoading(false);
     };
 
@@ -474,6 +522,17 @@ window.SettingsView = ({ token, role }) => {
             body: JSON.stringify({ action: 'update_user_role', token, client_id: userId, role: newRole }) 
         });
         if (res.status === 'success') fetchUsers(); else alert(res.message);
+    };
+
+    const handleAssignClient = async (clientId) => {
+        if (!selectedPartner) return;
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_partner', token, partner_id: selectedPartner.id, client_id: clientId }) });
+        if (res.status === 'success') {
+            setShowAssignModal(false);
+            alert('Client assigned to partner');
+        } else {
+            alert('Error: ' + res.message);
+        }
     };
 
     const handleRecalculateAll = async () => {
@@ -505,6 +564,7 @@ window.SettingsView = ({ token, role }) => {
             <div className="flex gap-4 border-b border-slate-200 pb-1">
                 <button onClick={() => setActiveTab('admin_controls')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'admin_controls' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>Admin Suite</button>
                 <button onClick={() => setActiveTab('users')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'users' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>User Manager</button>
+                <button onClick={() => setActiveTab('partners')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'partners' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>Partner Management</button>
             </div>
 
             {activeTab === 'admin_controls' && (
@@ -548,6 +608,56 @@ window.SettingsView = ({ token, role }) => {
                             ))}
                         </tbody>
                     </table>
+                </div>
+            )}
+
+            {activeTab === 'partners' && (
+                <div className="space-y-6">
+                    <div className="bg-white rounded border overflow-hidden">
+                        <div className="p-4 border-b bg-slate-50 font-bold">Partner List</div>
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 border-b"><tr><th className="p-3">Partner</th><th className="p-3">Contact</th><th className="p-3 text-right">Actions</th></tr></thead>
+                            <tbody>
+                                {partners.map(p => (
+                                    <tr key={p.id} className="border-b">
+                                        <td className="p-3">
+                                            <div className="font-bold text-[#2c3259]">{p.full_name || 'Unnamed'}</div>
+                                        </td>
+                                        <td className="p-3">
+                                            <div className="text-xs text-slate-600">{p.email}</div>
+                                            {p.phone && <div className="text-xs text-slate-400">{p.phone}</div>}
+                                        </td>
+                                        <td className="p-3 text-right">
+                                            <button onClick={() => { setSelectedPartner(p); setShowAssignModal(true); }} className="bg-[#2493a2] text-white px-3 py-1 rounded text-xs font-bold hover:bg-[#1e7e8b]">Assign Client</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {showAssignModal && selectedPartner && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
+                        <div className="p-6 border-b flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Assign Client to {selectedPartner.full_name}</h3>
+                            <button onClick={() => setShowAssignModal(false)}><Icons.Close/></button>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-slate-600 mb-4">Select a client to assign to this partner:</p>
+                            <div className="space-y-2 max-h-80 overflow-y-auto">
+                                {clients.map(c => (
+                                    <button key={c.id} onClick={() => handleAssignClient(c.id)} className="w-full text-left p-3 border rounded hover:bg-slate-50 transition-colors">
+                                        <div className="font-bold text-[#2c3259]">{c.full_name}</div>
+                                        <div className="text-xs text-slate-400">{c.email}</div>
+                                        {c.business_name && <div className="text-xs text-slate-500">{c.business_name}</div>}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

@@ -49,6 +49,7 @@ function ensureProjectSchema($pdo) {
     
     // Self-repair: add missing columns
     try { $pdo->exec("ALTER TABLE projects ADD COLUMN manager_id INT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE shared_files ADD COLUMN project_id INT DEFAULT 0"); } catch (Exception $e) {}
 }
 
 function recalcProjectHealth($pdo, $pid) {
@@ -354,6 +355,51 @@ function handleGetFiles($pdo, $i) {
     }
 
     sendJson('success', 'Files', ['files' => $s->fetchAll()]);
+}
+
+function handleUploadFile($pdo, $i) {
+    $u = verifyAuth($i);
+    ensureProjectSchema($pdo);
+    
+    $pid = (int)($i['project_id'] ?? 0);
+    $filename = strip_tags($i['filename'] ?? 'file');
+    $url = strip_tags($i['external_url'] ?? '');
+    $fileType = strip_tags($i['file_type'] ?? 'unknown');
+    $fileSize = strip_tags($i['filesize'] ?? '0');
+    
+    if (empty($url)) sendJson('error', 'File URL required');
+    
+    // Get project info
+    $p = $pdo->prepare("SELECT user_id, title, manager_id FROM projects WHERE id = ?");
+    $p->execute([$pid]);
+    $proj = $p->fetch();
+    
+    $clientId = $proj ? $proj['user_id'] : $u['uid'];
+    
+    $stmt = $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$clientId, $u['uid'], $filename, $url, $fileType, $fileSize, $pid]);
+    
+    // Add comment to project
+    $actorName = $u['name'] ?? $u['full_name'] ?? 'Someone';
+    $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
+        ->execute([$pid, $u['uid'], "📎 $actorName uploaded: $filename"]);
+    
+    // Notify
+    if ($proj) {
+        if ($u['role'] === 'client') {
+            if (!empty($proj['manager_id'])) {
+                createNotification($pdo, $proj['manager_id'], "File uploaded to '" . $proj['title'] . "': $filename", 'project', $pid);
+            }
+            notifyAllAdminsForProject($pdo, $pid, "File uploaded to '" . $proj['title'] . "': $filename");
+        } else {
+            createNotification($pdo, $proj['user_id'], "$actorName uploaded file to '" . $proj['title'] . "': $filename", 'project', $pid);
+            if (!empty($proj['manager_id']) && $proj['manager_id'] != $u['uid']) {
+                createNotification($pdo, $proj['manager_id'], "$actorName uploaded file to '" . $proj['title'] . "': $filename", 'project', $pid);
+            }
+        }
+    }
+    
+    sendJson('success', 'File uploaded');
 }
 
 function handleAICreateProject($pdo, $i, $s) {

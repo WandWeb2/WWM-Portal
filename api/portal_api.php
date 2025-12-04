@@ -113,6 +113,9 @@ try {
 
         // Clients & AI
         case 'get_clients': handleGetClients($pdo, $input); break;
+        case 'get_partners': handleGetPartners($pdo, $input); break;
+        case 'assign_partner': handleAssignPartner($pdo, $input); break;
+        case 'unassign_partner': handleUnassignPartner($pdo, $input); break;
         case 'get_client_details': handleGetClientDetails($pdo, $input, $secrets); break;
         case 'create_client': handleCreateClient($pdo, $input, $secrets); break;
         case 'update_client': handleUpdateClient($pdo, $input, $secrets); break;

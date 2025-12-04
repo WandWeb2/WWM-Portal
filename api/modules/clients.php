@@ -255,4 +255,52 @@ function handleGetMyProfile($pdo, $input) {
     $stmt->execute([$u['uid']]);
     sendJson('success', 'Profile Loaded', ['profile' => $stmt->fetch()]);
 }
+
+function handleGetPartners($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureUserSchema($pdo);
+    $s = $pdo->query("SELECT id, full_name, email, phone, created_at FROM users WHERE role = 'partner' ORDER BY full_name ASC");
+    sendJson('success', 'Partners fetched', ['partners' => $s->fetchAll()]);
+}
+
+function handleAssignPartner($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensurePartnerSchema($pdo);
+    
+    $partnerId = (int)($i['partner_id'] ?? 0);
+    $clientId = (int)($i['client_id'] ?? 0);
+    
+    if (!$partnerId || !$clientId) sendJson('error', 'Invalid IDs');
+    
+    // Insert or ignore
+    try {
+        $pdo->prepare("INSERT INTO partner_assignments (partner_id, client_id) VALUES (?, ?)")->execute([$partnerId, $clientId]);
+    } catch (Exception $e) {
+        // Already assigned
+    }
+    
+    // Notify partner
+    $c = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+    $c->execute([$clientId]);
+    $client = $c->fetch();
+    if ($client) {
+        createNotification($pdo, $partnerId, "You have been assigned to client: " . ($client['full_name'] ?? 'New Client'));
+    }
+    
+    sendJson('success', 'Partner assigned');
+}
+
+function handleUnassignPartner($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensurePartnerSchema($pdo);
+    
+    $partnerId = (int)($i['partner_id'] ?? 0);
+    $clientId = (int)($i['client_id'] ?? 0);
+    
+    $pdo->prepare("DELETE FROM partner_assignments WHERE partner_id = ? AND client_id = ?")->execute([$partnerId, $clientId]);
+    sendJson('success', 'Partner unassigned');
+}
 ?>
