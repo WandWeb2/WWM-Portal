@@ -1677,9 +1677,8 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                 })}
                 {isThinking && (
                     <div className="flex justify-start animate-pulse">
-                        <div className="bg-teal-50/50 border border-teal-100 text-teal-600 p-2 rounded-lg text-xs flex items-center gap-2">
-                            <window.Icons.Sparkles size={12} className="animate-spin"/> 
-                            <span className="font-medium">Second Mate is thinking...</span>
+                        <div className="bg-teal-50/50 border border-teal-100 text-teal-600 p-2 rounded-lg flex items-center">
+                            <window.Icons.Sparkles size={18} className="animate-spin"/> 
                         </div>
                     </div>
                 )}
