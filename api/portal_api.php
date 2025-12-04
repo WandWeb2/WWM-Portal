@@ -80,7 +80,7 @@ try {
      	case 'reply_ticket': require_once __DIR__.'/modules/support.php'; handleReplyTicket($pdo, $input, $secrets); break;
      	case 'update_ticket_status': require_once __DIR__.'/modules/support.php'; handleUpdateTicketStatus($pdo, $input); break;
         case 'escalate_ticket': require_once __DIR__.'/modules/support.php'; handleEscalateTicket($pdo, $input); break;
-     	case 'suggest_solution': require_once __DIR__.'/modules/support.php'; handleSuggestSolution($input, $secrets); break;
+     	case 'suggest_solution': require_once __DIR__.'/modules/support.php'; handleSuggestSolution($pdo, $input, $secrets); break;
         
         // Files (Google Drive Integration)
         case 'get_files': handleGetFiles($pdo, $input); break;
@@ -142,7 +142,7 @@ try {
         case 'submit_onboarding': handleSubmitOnboarding($pdo, $input, $secrets); break;
         case 'import_crm_clients': handleImportCRMClients($pdo, $input, $secrets); break;
         case 'import_stripe_clients': handleImportStripeClients($pdo, $input, $secrets); break;
-        case 'ai_request': handleAI($input, $secrets); break;
+        case 'ai_request': handleAI($pdo, $input, $secrets); break;
         case 'get_my_profile': handleGetMyProfile($pdo, $input); break;
         
         // Settings

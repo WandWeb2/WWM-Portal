@@ -307,4 +307,80 @@ function getGoogleAccessToken($secrets) {
 
     return $response['access_token'] ?? null;
 }
+
+// === SELF-HEALING AI GATEWAY ===
+
+function getActiveAIModel($pdo, $secrets) {
+    // 1. Try Cached
+    $cached = getSetting($pdo, 'ai_active_model');
+    if ($cached) return $cached;
+
+    // 2. Initial Setup (First Run)
+    return refreshAIModelList($pdo, $secrets);
+}
+
+function refreshAIModelList($pdo, $secrets) {
+    $url = "https://generativelanguage.googleapis.com/v1beta/models?key=" . $secrets['GEMINI_API_KEY'];
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $res = json_decode(curl_exec($ch), true);
+    curl_close($ch);
+
+    if (empty($res['models'])) return 'gemini-1.5-flash-001'; // Fallback
+
+    // Logic: Find latest "flash" model that supports generation
+    $bestModel = '';
+    foreach ($res['models'] as $m) {
+        $name = str_replace('models/', '', $m['name']);
+        if (strpos($name, 'flash') !== false && in_array('generateContent', $m['supportedGenerationMethods'] ?? [])) {
+            $bestModel = $name;
+            break; 
+        }
+    }
+    
+    if (!$bestModel) $bestModel = 'gemini-1.5-flash-001'; // Hard fallback
+
+    // Save to DB
+    $pdo->prepare("REPLACE INTO settings (setting_key, setting_value) VALUES ('ai_active_model', ?)")
+        ->execute([$bestModel]);
+        
+    return $bestModel;
+}
+
+function callGeminiAI($pdo, $secrets, $systemPrompt, $userPrompt = "") {
+    $model = getActiveAIModel($pdo, $secrets);
+    $response = internalGeminiRequest($secrets['GEMINI_API_KEY'], $model, $systemPrompt, $userPrompt);
+
+    // AUTO-HEAL: If model not found (404/400), refresh list and retry ONCE
+    if (isset($response['error']) && (stripos($response['error']['message'], 'not found') !== false || stripos($response['error']['message'], 'not supported') !== false)) {
+        $newModel = refreshAIModelList($pdo, $secrets);
+        if ($newModel !== $model) {
+            $response = internalGeminiRequest($secrets['GEMINI_API_KEY'], $newModel, $systemPrompt, $userPrompt);
+        }
+    }
+
+    return $response;
+}
+
+function internalGeminiRequest($apiKey, $model, $sys, $user) {
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey";
+    $payload = [
+        "contents" => [
+            [
+                "role" => "user",
+                "parts" => [["text" => $sys . "\n\n" . $user]]
+            ]
+        ]
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    $res = curl_exec($ch);
+    curl_close($ch);
+    
+    return json_decode($res, true);
+}
 ?>

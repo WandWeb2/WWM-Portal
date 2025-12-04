@@ -441,20 +441,10 @@ function handleAICreateProject($pdo, $i, $s) {
         ]
     }";
 
-    // 2. Call Gemini
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . $s['GEMINI_API_KEY'];
-    $payload = json_encode(["contents" => [["parts" => [["text" => $sysPrompt]]]]]);
-    
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    $response = curl_exec($ch);
-    curl_close($ch);
+    // 2. Call Gemini using Self-Healing Gateway
+    $data = callGeminiAI($pdo, $s, $sysPrompt);
     
     // 3. Parse & Clean
-    $data = json_decode($response, true);
     $rawText = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
     // Strip code fences if AI adds them
     $jsonStr = preg_replace('/^```json\s*|\s*```$/', '', trim($rawText));

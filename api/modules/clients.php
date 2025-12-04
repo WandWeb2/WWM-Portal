@@ -166,13 +166,10 @@ function handleSubmitOnboarding($pdo, $input, $secrets) {
 
 // === AI HANDLER WITH SUPPORT TRIGGER ===
 // === AI HANDLER WITH SUPPORT TRIGGER ===
-function handleAI($i, $s) {
+function handleAI($pdo, $i, $s) {
     $user = verifyAuth($i);
     if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'AI', ['text' => 'Config Error: API Key missing.']);
 
-    $model = "gemini-1.5-flash";
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=" . $s['GEMINI_API_KEY'];
-    
     $websiteContext = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Website data unavailable.";
     $dashboardContext = isset($i['data_context']) ? json_encode($i['data_context']) : "No active dashboard data.";
 
@@ -195,19 +192,9 @@ function handleAI($i, $s) {
     }
 
     $userMessage = $i['prompt'];
-    $fullPrompt = $systemPrompt . "\n\nUSER: " . $userMessage;
 
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["contents" => [["parts" => [["text" => $fullPrompt]]]]]));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    
-    $response = curl_exec($ch);
-    if (curl_errno($ch)) { $err = curl_error($ch); curl_close($ch); sendJson('success', 'AI', ['text' => "Connection Error: $err"]); }
-    curl_close($ch);
-    
-    $d = json_decode($response, true);
+    // USE SELF-HEALING GATEWAY
+    $d = callGeminiAI($pdo, $s, $systemPrompt, $userMessage);
     
     // Improved Error Handling to catch "System Offline" causes
     if (!empty($d['error'])) {
