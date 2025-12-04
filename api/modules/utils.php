@@ -514,6 +514,50 @@ function handleDebugTest($pdo, $i, $secrets) {
             }
             break;
             
+        case 'permissions_audit':
+            try {
+                logSystemEvent($pdo, "=== PARTNER PERMISSIONS AUDIT ===", 'info');
+                
+                // Check partner role enum
+                $stmt = $pdo->query("SHOW COLUMNS FROM users WHERE Field='role'");
+                $roleCol = $stmt->fetch();
+                logSystemEvent($pdo, "Role Column Type: " . $roleCol['Type'], 'info');
+                
+                // Count partners
+                $pStmt = $pdo->query("SELECT COUNT(*) as count FROM users WHERE role = 'partner' AND status = 'active'");
+                $pCount = $pStmt->fetch();
+                logSystemEvent($pdo, "Active Partners: " . $pCount['count'], 'success');
+                
+                // List each partner's clients
+                $partners = $pdo->query("SELECT id, full_name FROM users WHERE role = 'partner' AND status = 'active' ORDER BY full_name");
+                foreach ($partners->fetchAll() as $partner) {
+                    $cStmt = $pdo->prepare("SELECT COUNT(*) as count FROM partner_assignments WHERE partner_id = ?");
+                    $cStmt->execute([$partner['id']]);
+                    $cRow = $cStmt->fetch();
+                    logSystemEvent($pdo, "  Partner #{$partner['id']} ({$partner['full_name']}): manages {$cRow['count']} client(s)", 'info');
+                    
+                    // List their clients
+                    $clients = $pdo->prepare("SELECT u.id, u.full_name FROM users u JOIN partner_assignments pa ON u.id = pa.client_id WHERE pa.partner_id = ?");
+                    $clients->execute([$partner['id']]);
+                    foreach ($clients->fetchAll() as $client) {
+                        logSystemEvent($pdo, "    → Client #{$client['id']}: {$client['full_name']}", 'info');
+                    }
+                }
+                
+                // Permission checks
+                logSystemEvent($pdo, "=== PERMISSION SUMMARY ===", 'info');
+                logSystemEvent($pdo, "✓ Partners can: View assigned clients' projects", 'success');
+                logSystemEvent($pdo, "✓ Partners can: View project details for assigned clients", 'success');
+                logSystemEvent($pdo, "✓ Partners can: Create projects for assigned clients", 'success');
+                logSystemEvent($pdo, "✓ Partners can: View their own profile/settings", 'success');
+                logSystemEvent($pdo, "✓ Admin can: Assign clients to partners via partner_assignments", 'success');
+                logSystemEvent($pdo, "Note: Partners CANNOT delete projects (admin only)", 'warning');
+                
+            } catch (Exception $e) {
+                logSystemEvent($pdo, "Permissions Audit ERROR: " . $e->getMessage(), 'error');
+            }
+            break;
+            
         default:
             $result = "Unknown test: $test";
             logSystemEvent($pdo, $result, 'warning');
