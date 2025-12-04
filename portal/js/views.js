@@ -1479,38 +1479,53 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const scrollRef = React.useRef(null);
     const isAdmin = role === 'admin';
 
+    // 1. Initial Load & Event Listener for "Typing"
     React.useEffect(() => {
         const loadThread = async () => {
-            const thinkingKey = 'ai_thinking_' + ticket.id;
-            const isFresh = localStorage.getItem(thinkingKey);
-
-            if (isFresh) {
-                // SIMULATE ANALYSIS (The "Magic" Delay)
-                setMessages([]); // Start empty
-                setIsThinking(true);
-                
-                // Wait 2.5s for "Analysis"
-                setTimeout(async () => {
-                    const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
-                    if(res.status==='success') {
-                        // Reveal messages
-                        setMessages(res.messages);
-                        // Simulate typing for the new AI response
-                        const aiMsgs = res.messages.filter(m => m.sender_id == 0);
-                        if(aiMsgs.length > 0) window.simulateTyping(aiMsgs);
-                    }
-                    setIsThinking(false);
-                    localStorage.removeItem(thinkingKey);
-                }, 2500);
-            } else {
-                // Normal Load
-                window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) })
-                .then(res => { if(res.status==='success') setMessages(res.messages); });
-            }
+            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
+            if(res.status==='success') setMessages(res.messages);
         };
-        loadThread();
-    }, [ticket]);
+        
+        // Listen for AI Typing Events
+        const handleNewAiMsg = (e) => {
+            const newMsg = e.detail;
+            setMessages(prev => {
+                // Avoid duplicates
+                if (prev.some(m => m.id === newMsg.id)) return prev;
+                return [...prev, newMsg];
+            });
+            // Scroll on new message
+            if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        };
 
+        window.addEventListener('new_ai_msg', handleNewAiMsg);
+        loadThread(); // Initial load
+
+        return () => window.removeEventListener('new_ai_msg', handleNewAiMsg);
+    }, [ticket.id]);
+
+    // 2. Polling for Admin Replies (Every 4s)
+    React.useEffect(() => {
+        const poll = setInterval(async () => {
+            if (isThinking) return; // Don't poll while waiting for AI to reply
+            
+            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
+            if (res.status === 'success') {
+                setMessages(prev => {
+                    // Only update if we have MORE messages (simple append check)
+                    if (res.messages.length > prev.length) {
+                        // If the new message is System/AI, let simulateTyping handle it? 
+                        // Ideally yes, but for simple polling, just update is fine.
+                        return res.messages; 
+                    }
+                    return prev;
+                });
+            }
+        }, 4000);
+        return () => clearInterval(poll);
+    }, [ticket.id, isThinking]);
+
+    // Scroll effect
     React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
 
     const handleSend = async (e) => {
@@ -1521,7 +1536,7 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
         const tempId = 'temp-' + Date.now();
         setReply(""); 
         
-        // 1. Optimistic Update
+        // Optimistic Update (User Msg)
         const tempMsg = {
             id: tempId,
             role: role, 
@@ -1533,61 +1548,67 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
         setIsThinking(true);
 
         try {
-            // 2. Send to Server
+            // Send
             const sendRes = await window.safeFetch(API_URL, { 
                 method: 'POST', 
                 body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: textToSend, is_internal: isInternal }) 
             });
 
             if (sendRes.status !== 'success') {
-                // Handle "Ticket Closed" error specifically
                 if (sendRes.message.includes('closed')) {
-                    alert("Unable to reply: " + sendRes.message);
-                    if(onUpdate) onUpdate(); // Refresh parent to show closed state
+                    alert("Ticket Closed");
+                    if(onUpdate) onUpdate();
                     return;
                 }
-                throw new Error(sendRes.message || "Failed to send");
+                throw new Error(sendRes.message);
             }
 
-            // 3. IMMEDIATE STATUS UPDATE (Lock UI if AI/Logic closed it)
+            // Update Status
             if (sendRes.new_status && sendRes.new_status !== ticket.status) {
-                // Mutate the local ticket object prop to reflect new status immediately
                 ticket.status = sendRes.new_status;
-                if (onUpdate) onUpdate(); // Tell parent to refresh list
+                if (onUpdate) onUpdate();
             }
 
-            // 4. Refresh Thread
+            // FETCH NEW THREAD BUT DO NOT RENDER YET
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
+            
             if(res.status==='success') {
-                // Filter out the temp message we added, replace with real data
-                // Note: simulateTyping will handle new AI messages
-                const newMsgs = res.messages;
+                const allMsgs = res.messages;
+                // Find what the backend added (AI replies)
+                // Logic: Messages that have sender_id=0 and ID > any message we currently have (excluding temp)
+                const realMsgs = messages.filter(m => m.id !== tempId);
+                const lastRealId = realMsgs.length > 0 ? realMsgs[realMsgs.length - 1].id : 0;
                 
-                // Find messages that are NEW (ID is greater than last known real message)
-                const lastRealMsg = messages.filter(m => m.id !== tempId).pop();
-                const freshMessages = lastRealMsg 
-                    ? newMsgs.filter(m => m.id > lastRealMsg.id && m.sender_id == 0) 
-                    : [];
+                const newAiMsgs = allMsgs.filter(m => m.id > lastRealId && m.sender_id == 0);
+                const newHumanMsgs = allMsgs.filter(m => m.id > lastRealId && m.sender_id != 0);
 
-                setMessages(newMsgs);
-                
-                if(freshMessages.length > 0) {
-                    window.simulateTyping(freshMessages);
+                // 1. Set state to "History + User Message (Confirmed)"
+                // We replace the temp message with the real one from server if possible, or just use the full list minus AI stuff
+                const nonAiList = allMsgs.filter(m => m.sender_id != 0 || m.id <= lastRealId);
+                setMessages(nonAiList);
+
+                // 2. Trigger Theatrical Typing for AI messages
+                if (newAiMsgs.length > 0) {
+                    window.simulateTyping(newAiMsgs, 50, () => {
+                        setIsThinking(false);
+                        // Final sync to ensure nothing missed
+                        setMessages(allMsgs); 
+                    });
+                } else {
+                    setIsThinking(false);
+                    setMessages(allMsgs);
                 }
             }
         } catch (err) {
             console.error(err);
-            setMessages(prev => prev.filter(m => m.id !== tempId));
-            alert("Error sending message: " + err.message);
-        } finally {
+            alert("Error: " + err.message);
             setIsThinking(false);
         }
     };
     
     const handleClose = async () => {
-         if(!confirm("Are you sure you want to close this ticket?")) return;
+         if(!confirm("Close ticket?")) return;
          await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_ticket_status', token, ticket_id: ticket.id, status: 'closed' }) });
-         // Force parent refresh
          if(onUpdate) onUpdate();
     };
 
@@ -1598,7 +1619,7 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     };
 
     const handleReopen = async () => {
-         if(!confirm("Re-open this ticket?")) return;
+         if(!confirm("Re-open ticket?")) return;
          await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_ticket_status', token, ticket_id: ticket.id, status: 'open' }) });
          if(onUpdate) onUpdate();
     };
@@ -1622,7 +1643,6 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                     const isInternalMsg = m.is_internal == 1;
                     let bubbleColor = 'bg-slate-100 text-slate-600';
                     
-                    // PARSE PERSONA TAGS
                     const text = m.message || '';
                     let displayMessage = text;
                     let personaLabel = null;
@@ -1642,7 +1662,7 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         } else if (text.includes('[System]')) {
                             bubbleColor = 'bg-slate-200 text-slate-600 text-xs font-bold text-center py-1';
                             displayMessage = text.replace('[System]', '').trim();
-                            personaLabel = null; // System messages are self-labeling
+                            personaLabel = null; 
                         }
                     } else {
                         bubbleColor = (m.role === 'admin' ? 'bg-[#2c3259] text-white' : 'bg-[#2493a2] text-white');
@@ -1650,7 +1670,6 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                     
                     const align = isSystem ? 'justify-start' : (m.role === role ? 'justify-end' : 'justify-start');
                     
-                    // Special render for centered system events
                     if (isSystem && text.includes('[System]')) {
                         return (
                             <div key={m.id} className="flex justify-center my-2">
@@ -1663,20 +1682,14 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         <div key={m.id} className={`flex ${align}`}>
                             <div className={`max-w-[85%] p-3 rounded-xl text-sm shadow-sm relative ${bubbleColor}`}>
                                 {personaLabel && <div className="text-[9px] font-bold uppercase opacity-70 mb-1 tracking-wider">{personaLabel}</div>}
-                                {m.typing ? (
-                                    <span className="flex gap-1 items-center">
-                                        Typing <span className="w-1 h-1 bg-current rounded-full animate-bounce"/><span className="w-1 h-1 bg-current rounded-full animate-bounce delay-100"/><span className="w-1 h-1 bg-current rounded-full animate-bounce delay-200"/>
-                                    </span>
-                                ) : (
-                                    <span className="whitespace-pre-wrap block leading-relaxed">{window.formatTextWithLinks(displayMessage)}</span>
-                                )}
+                                <span className="whitespace-pre-wrap block leading-relaxed">{window.formatTextWithLinks(displayMessage)}</span>
                                 <div className="text-[9px] mt-2 opacity-50 text-right">{new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                             </div>
                         </div>
                     );
                 })}
                 {isThinking && (
-                    <div className="flex justify-start animate-pulse">
+                     <div className="flex justify-start animate-pulse">
                         <div className="bg-teal-50/50 border border-teal-100 text-teal-600 p-2 rounded-lg flex items-center">
                             <window.Icons.Sparkles size={18} className="animate-spin"/> 
                         </div>

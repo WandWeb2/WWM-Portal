@@ -47,16 +47,21 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     $last = $lastMsg->fetch();
     if ($last && $last['sender_id'] == 0) return;
 
-    // 2. Fetch Context
+    // 2. Context & Client Dossier
     $tStmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
     $tStmt->execute([$ticketId]);
     $ticket = $tStmt->fetch();
+
+    // --- AI SILENCE PROTOCOL ---
+    // If ticket is already escalated, AI must NOT reply. Admin is in control.
+    if ($ticket['status'] === 'escalated') return;
     
+    // Fetch Client Profile
     $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
     $uStmt->execute([$ticket['user_id']]);
     $client = $uStmt->fetch();
 
-    // 3. Fetch Billing (via API to avoid Table Error)
+    // Fetch Billing Context
     $billingContext = "No billing data linked.";
     if (!empty($client['stripe_id']) && function_exists('stripeRequest')) {
         try {
@@ -81,7 +86,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
 
     $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
 
-    // 4. THE "INTAKE & DISPATCH" PROMPT
+    // 3. THE "INTAKE & DISPATCH" PROMPT
     $systemPrompt = "
     CONTEXT: $kb
     
@@ -89,20 +94,19 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     - Name: {$client['full_name']}
     - Business: {$client['business_name']}
     - Email: {$client['email']}
-    - Phone: {$client['phone']}
     - Billing: $billingContext
     
     PERSONAS:
     1. [Second Mate] (Tier 1): Friendly, helpful. Answers generic questions.
     2. [First Mate] (Tier 2 Admin): Authoritative, capable.
     
-    CRITICAL FIRST MATE RULES:
-    - You CANNOT edit websites, change billing, or execute technical tasks yourself. You are an interface.
-    - If the client requests work (e.g., 'Update my logo', 'Upgrade my plan'):
-      1. Confirm the specific details with the client.
-      2. State: \"I have placed a formal work order for this request and notified the Admin to execute it.\"
-      3. You MUST include the word 'Admin' or 'Dan' in your reply to trigger the pager.
-    - NEVER direct users to external contact forms. You ARE the intake.
+    CRITICAL RULES:
+    - You CANNOT edit websites, change billing, or execute technical tasks.
+    - If the client requests work (e.g., 'Update my logo'):
+      1. Confirm details.
+      2. State: \"I have placed a formal work order and notified the Admin.\"
+      3. Include 'Admin' or 'Dan' to trigger the pager.
+    - NEVER direct users to external contact forms.
 
     OUTPUT FORMATS:
 
@@ -110,11 +114,12 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     Output string: \"[Second Mate] Your answer here...\"
 
     SCENARIO B: Escalation/Work Request (First Mate)
-    Output a RAW JSON ARRAY of exactly 3 strings:
+    Output a RAW JSON ARRAY of exactly 4 strings:
     [
       \"[Second Mate] I cannot perform that update directly. Summoning the First Mate to process this work order.\",
       \"[System] First Mate AI has entered the chat.\",
-      \"[First Mate] Hello {$client['full_name']}. I have received your request. I have created a work order and notified the Admin (Dan) to process this immediately. Is there anything else to add to the brief?\"
+      \"[First Mate] Hello {$client['full_name']}. I have received your request. I have created a work order and notified the Admin (Dan) to process this immediately. Is there anything else to add?\",
+      \"[System] Both AI agents have left the chat. Ticket handed over to human support.\"
     ]
     ";
 
@@ -135,7 +140,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
                 $messagesToAdd = $script;
                 $newStatus = 'escalated';
                 
-                // NOTIFY ADMIN IF REQUESTED
+                // Notify Admin
                 $fullResponse = implode(" ", $script);
                 if (stripos($fullResponse, 'Dan') !== false || stripos($fullResponse, 'Admin') !== false) {
                     if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Requesting Action on Ticket #$ticketId");
