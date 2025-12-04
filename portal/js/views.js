@@ -751,59 +751,40 @@ window.FilesView = ({ token, role }) => {
     const [files, setFiles] = React.useState([]); 
     const [loading, setLoading] = React.useState(true); 
     const [show, setShow] = React.useState(false); 
-    const [clients, setClients] = React.useState([]); // For Admin Selector
+    const [clients, setClients] = React.useState([]); 
     const isAdmin = role === 'admin'; 
     
     const fetchData = () => { 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_files', token }) })
-            .then(res => { if(res && res.status==='success') setFiles(res.files||[]); })
+            .then(res => { if(res.status==='success') setFiles(res.files||[]); })
             .finally(()=>setLoading(false)); 
     };
     
     React.useEffect(() => { 
         fetchData(); 
-        if(isAdmin) {
-             window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
-                .then(res => setClients(res.clients || []));
-        }
+        if(isAdmin) window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) }).then(res => setClients(res.clients || []));
     }, [token]); 
-    
+
     const handleUpload = async (e) => { 
         e.preventDefault(); 
-        const f = new FormData(e.target); 
-        f.append('action', 'upload_file'); 
-        f.append('token', token); 
-        
-        // Show loading state
         const btn = e.target.querySelector('button');
-        const originalText = btn.innerText;
-        btn.innerText = "Uploading to Drive...";
-        btn.disabled = true;
-
+        btn.innerText = "Uploading to Drive..."; btn.disabled = true;
+        
+        const f = new FormData(e.target); 
+        f.append('action', 'upload_file'); f.append('token', token); 
+        
         try {
             const r = await fetch(API_URL, { method: 'POST', body: f });
             const d = await r.json();
-            if(d.status==='success') { setShow(false); fetchData(); } else alert(d.message); 
-        } catch(err) { alert("Upload error"); }
-        
-        btn.innerText = originalText;
-        btn.disabled = false;
+            if(d.status==='success') { setShow(false); fetchData(); } else alert(d.message);
+        } catch(e) { alert("Upload Failed"); }
+        btn.innerText = "Upload Now"; btn.disabled = false;
     };
 
     const handleDelete = async (id) => {
-        if(!confirm("Are you sure? This will delete the file from the Portal and Google Drive.")) return;
+        if(!confirm("Permanently delete from Drive & Portal?")) return;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_file', token, file_id: id }) });
         if(res.status === 'success') fetchData(); else alert(res.message);
-    };
-    
-    const formatBytes = (bytes, decimals = 0) => {
-        if (!bytes) return '0 Bytes';
-        if (isNaN(bytes)) return bytes;
-        const k = 1024;
-        const dm = decimals < 0 ? 0 : decimals;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
     };
 
     if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>;    
@@ -812,48 +793,28 @@ window.FilesView = ({ token, role }) => {
         <div className="space-y-6 animate-fade-in">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-[#2c3259]">Files & Assets</h2>
-                <button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-sm shadow hover:bg-[#363d6e] flex items-center gap-2">
-                    <Icons.Upload size={16}/> Upload File
-                </button>
+                <button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-sm flex items-center gap-2"><Icons.Upload size={16}/> Upload File</button>
             </div>
-
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b text-slate-500 uppercase text-xs">
-                        <tr>
-                            <th className="p-4">Name</th>
-                            {isAdmin && <th className="p-4">Client</th>}
-                            <th className="p-4">Type</th>
-                            <th className="p-4">Size</th>
-                            <th className="p-4 text-right">Action</th>
-                        </tr>
+                        <tr><th className="p-4">Name</th>{isAdmin && <th className="p-4">Client</th>}<th className="p-4">Type</th><th className="p-4 text-right">Action</th></tr>
                     </thead>
                     <tbody>
                         {files.length === 0 ? <tr><td colSpan="5" className="p-6 text-center text-slate-400">No files found.</td></tr> : files.map(f => {
                             const isDrive = f.external_url && f.external_url.startsWith('drive:');
-                            // Secure Proxy Link
-                            const downloadUrl = `${API_URL}?action=download_file&token=${encodeURIComponent(token)}&file_id=${f.id}`;
-                            // Legacy/External Link Fallback
-                            const linkUrl = isDrive ? downloadUrl : (f.external_url || f.filepath);
-                            
+                            // Secure Proxy URL
+                            const url = isDrive ? `${API_URL}?action=download_file&token=${encodeURIComponent(token)}&file_id=${f.id}` : f.external_url;
                             return (
-                                <tr key={f.id} className="border-b hover:bg-slate-50 transition-colors">
+                                <tr key={f.id} className="border-b hover:bg-slate-50">
                                     <td className="p-4 font-bold flex gap-3 items-center text-[#2c3259]">
-                                        {isDrive ? <Icons.Cloud className="text-blue-500" size={18}/> : <Icons.Link className="text-orange-400" size={18}/>}
-                                        {f.filename}
+                                        {isDrive ? <Icons.Cloud className="text-blue-500" size={18}/> : <Icons.Link className="text-orange-400" size={18}/>} {f.filename}
                                     </td>
                                     {isAdmin && <td className="p-4 text-slate-600">{f.client_name}</td>}
-                                    <td className="p-4 text-xs font-bold text-slate-400 bg-slate-100/50 rounded uppercase">{f.file_type ? f.file_type.split('/').pop() : 'FILE'}</td>
-                                    <td className="p-4 text-xs font-mono text-slate-500">{formatBytes(f.filesize)}</td>
-                                    <td className="p-4 text-right flex gap-2 justify-end items-center">
-                                        <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 font-bold text-xs border border-blue-200 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 transition-colors">
-                                            {isDrive ? 'Download' : 'Open'}
-                                        </a>
-                                        {isAdmin && (
-                                            <button onClick={()=>handleDelete(f.id)} className="text-red-400 hover:text-red-600 p-1">
-                                                <Icons.Trash size={16}/>
-                                            </button>
-                                        )}
+                                    <td className="p-4 text-xs font-bold text-slate-400 uppercase">{f.file_type ? f.file_type.split('/').pop() : 'FILE'}</td>
+                                    <td className="p-4 text-right flex gap-2 justify-end">
+                                        <a href={url} target="_blank" className="text-blue-600 font-bold text-xs border border-blue-200 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100">{isDrive ? 'Download' : 'Open'}</a>
+                                        {isAdmin && <button onClick={()=>handleDelete(f.id)} className="text-red-400 hover:text-red-600 p-1"><Icons.Trash size={16}/></button>}
                                     </td>
                                 </tr>
                             );
@@ -861,27 +822,16 @@ window.FilesView = ({ token, role }) => {
                     </tbody>
                 </table>
             </div>
-            
             {show && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
                     <div className="bg-white p-8 rounded-xl w-full max-w-md relative shadow-2xl">
-                        <button onClick={()=>setShow(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><Icons.Close/></button>
+                        <button onClick={()=>setShow(false)} className="absolute top-4 right-4"><Icons.Close/></button>
                         <h3 className="font-bold text-xl mb-4 text-[#2c3259]">Upload to Secure Storage</h3>
                         <form onSubmit={handleUpload} className="space-y-4">
-                            {isAdmin && (
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 mb-1">Assign to Client</label>
-                                    <select name="client_id" className="w-full p-2 border rounded text-sm">
-                                        <option value="">-- Myself / General --</option>
-                                        {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                                    </select>
-                                </div>
-                            )}
-                            <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:bg-slate-50 transition-colors">
-                                <input type="file" name="file" className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#2c3259] file:text-white hover:file:bg-[#363d6e]" required />
-                                <p className="text-xs text-slate-400 mt-2">Files will be stored in Google Drive &gt; Client Folder &gt; Shared Files</p>
-                            </div>
-                            <button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow hover:bg-[#363d6e] transition-colors">Upload Now</button>
+                            {isAdmin && (<div><label className="text-xs font-bold text-slate-500">Assign to Client</label><select name="client_id" className="w-full p-2 border rounded"><option value="">-- Myself / General --</option>{clients.map(c=><option key={c.id} value={c.id}>{c.full_name}</option>)}</select></div>)}
+                            <input type="file" name="file" className="w-full text-sm file:bg-[#2c3259] file:text-white file:rounded-full file:px-4 file:py-2 file:border-0" required />
+                            <p className="text-xs text-slate-400 text-center">Stored securely in Google Drive &gt; Client Folder</p>
+                            <button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold">Upload Now</button>
                         </form>
                     </div>
                 </div>

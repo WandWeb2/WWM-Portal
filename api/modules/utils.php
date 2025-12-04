@@ -278,36 +278,33 @@ function notifyAllAdminsForProject($pdo, $projectId, $message) {
     }
 }
 
-// === GOOGLE DRIVE OAUTH HELPER ===
+// === GOOGLE OAUTH HELPER (Moved from clients.php) ===
 function getGoogleAccessToken($secrets) {
-    if (empty($secrets['GOOGLE_CLIENT_ID']) || empty($secrets['GOOGLE_CLIENT_SECRET']) || empty($secrets['GOOGLE_REFRESH_TOKEN'])) {
-        throw new Exception("Missing Google OAuth credentials in secrets.php");
+    // 1. Check for Config
+    if (empty($secrets['GOOGLE_REFRESH_TOKEN'])) {
+        throw new Exception("Google Integration Not Configured (Missing Refresh Token)");
     }
 
-    $ch = curl_init("https://oauth2.googleapis.com/token");
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
-        'client_id' => $secrets['GOOGLE_CLIENT_ID'],
+    $url = "https://oauth2.googleapis.com/token";
+    $params = [
+        'client_id'     => $secrets['GOOGLE_CLIENT_ID'],
         'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'],
         'refresh_token' => $secrets['GOOGLE_REFRESH_TOKEN'],
-        'grant_type' => 'refresh_token'
-    ]));
+        'grant_type'    => 'refresh_token'
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
     
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $response = json_decode(curl_exec($ch), true);
     curl_close($ch);
-    
-    if ($httpCode !== 200) {
-        throw new Exception("Google OAuth token refresh failed: HTTP $httpCode - $response");
+
+    if (isset($response['error'])) {
+        throw new Exception("Google OAuth Error: " . ($response['error_description'] ?? $response['error']));
     }
-    
-    $data = json_decode($response, true);
-    if (empty($data['access_token'])) {
-        throw new Exception("No access token in Google OAuth response");
-    }
-    
-    return $data['access_token'];
+
+    return $response['access_token'] ?? null;
 }
 ?>
