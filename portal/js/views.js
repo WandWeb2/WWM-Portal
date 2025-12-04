@@ -597,8 +597,16 @@ window.SettingsView = ({ token, role }) => {
 
     const fetchAudit = async () => {
         setLoading(true);
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_all_users', token }) });
-        if (res.status === 'success') setRawUsers(res.users || []);
+        // Force fresh fetch with cache-busting timestamp
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_all_users', token, _t: Date.now() }) });
+        if (res.status === 'success') {
+            setRawUsers(res.users || []);
+            if(res.users && res.users.length === 0) {
+                console.warn('⚠️ Audit returned 0 users. Check database connection.');
+            }
+        } else {
+            alert('Failed to fetch audit data: ' + res.message);
+        }
         setLoading(false);
     };
 
@@ -661,10 +669,18 @@ window.SettingsView = ({ token, role }) => {
 
             {activeTab === 'audit' && (
                 <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
-                    <div className="p-4 bg-red-100 text-red-900 text-sm font-bold flex justify-between">
-                        <span>⚠️ Database Audit (Recovery Mode)</span>
-                        <span>Total Records: {rawUsers.length}</span>
+                    <div className="p-4 bg-red-100 text-red-900 text-sm font-bold flex justify-between items-center">
+                        <span>⚠️ Database Audit (Recovery Mode) - Total Records: {rawUsers.length}</span>
+                        <button onClick={fetchAudit} disabled={loading} className="bg-red-700 hover:bg-red-800 text-white px-3 py-1 rounded text-xs font-bold">
+                            {loading ? 'Refreshing...' : 'Refresh'}
+                        </button>
                     </div>
+                    {rawUsers.length === 0 && (
+                        <div className="p-4 text-center text-red-700 font-bold">
+                            ✓ No undefined users. Database is clean!
+                        </div>
+                    )}
+                    {rawUsers.length > 0 && (
                     <table className="w-full text-xs text-left">
                         <thead className="bg-white border-b"><tr><th className="p-2">ID</th><th className="p-2">Name/Email</th><th className="p-2">Raw Role</th><th className="p-2">Raw Status</th><th className="p-2 text-right">Force Fix</th></tr></thead>
                         <tbody>
@@ -685,6 +701,7 @@ window.SettingsView = ({ token, role }) => {
                             ))}
                         </tbody>
                     </table>
+                    )}
                 </div>
             )}
 
