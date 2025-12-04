@@ -602,7 +602,21 @@ window.SettingsView = ({ token, role }) => {
     
     const handleForceFix = async (userId, role, status) => {
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'fix_user_account', token, target_user_id: userId, role, status }) });
-        if (res.status === 'success') { alert("Recovered!"); fetchAudit(); } else alert(res.message);
+        if (res.status === 'success') { 
+            alert("Recovered! User is now a " + role);
+            fetchAudit();
+            // Also refresh partners tab if the user was made a partner
+            if (role === 'partner') {
+                // Add small delay to ensure DB commit
+                setTimeout(async () => {
+                    await fetchPartners();
+                    // Switch to partners tab to show the newly recovered partner
+                    setActiveTab('partners');
+                }, 500);
+            }
+        } else {
+            alert("Error: " + (res.message || 'Failed to recover account'));
+        }
     };
 
     const handleAssignClient = async (clientId) => {
