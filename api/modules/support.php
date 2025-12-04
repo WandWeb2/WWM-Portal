@@ -228,11 +228,6 @@ function handleCreateTicket($pdo, $i, $s) {
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, ?, ?)"); 
     $stmt->execute([$ticketId, $u['uid'], strip_tags($i['message'])]); 
     
-    // System bootstrap message from Second Mate AI
-    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
-    $secondMateMsg = "[Second Mate] Ahoy! I am Second Mate AI. I've received your request and am analyzing the ship's logs. I will attempt to resolve this immediately. If I cannot, I will signal the First Mate.";
-    $stmt->execute([$ticketId, $secondMateMsg]);
-    
     // If created by Client, trigger AI and notify partner
     if ($u['role'] === 'client') { 
         triggerSupportAI($pdo, $s, $ticketId);
@@ -242,7 +237,7 @@ function handleCreateTicket($pdo, $i, $s) {
         createNotification($pdo, $ticketOwnerId, "New Support Ticket #$ticketId opened for you by {$u['name']}", 'ticket', $ticketId);
     }
 
-    sendJson('success', 'Ticket Created'); 
+    sendJson('success', 'Ticket Created', ['ticket_id' => $ticketId]); 
 }
 
 function handleReplyTicket($pdo, $i, $s) { 

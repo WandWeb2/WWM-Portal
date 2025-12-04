@@ -1480,26 +1480,35 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const isAdmin = role === 'admin';
 
     React.useEffect(() => {
-        // AI typing simulation: pick up staged messages
-        const staged = localStorage.getItem('initial_ai_msgs');
-        if (staged && ticket && ticket.status === 'ai_triage') {
-            localStorage.removeItem('initial_ai_msgs');
-            try {
-                const initialMessages = JSON.parse(staged);
-                const aiMsgs = initialMessages.filter(m => m.sender_id === 0);
-                setMessages(aiMsgs.map(m => ({ ...m, message: '', typing: true })));
-                window.simulateTyping(aiMsgs, 50, async () => {
+        const loadThread = async () => {
+            const thinkingKey = 'ai_thinking_' + ticket.id;
+            const isFresh = localStorage.getItem(thinkingKey);
+
+            if (isFresh) {
+                // SIMULATE ANALYSIS (The "Magic" Delay)
+                setMessages([]); // Start empty
+                setIsThinking(true);
+                
+                // Wait 2.5s for "Analysis"
+                setTimeout(async () => {
                     const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
-                    if(res.status==='success') setMessages(res.messages);
-                });
-            } catch (e) {
+                    if(res.status==='success') {
+                        // Reveal messages
+                        setMessages(res.messages);
+                        // Simulate typing for the new AI response
+                        const aiMsgs = res.messages.filter(m => m.sender_id == 0);
+                        if(aiMsgs.length > 0) window.simulateTyping(aiMsgs);
+                    }
+                    setIsThinking(false);
+                    localStorage.removeItem(thinkingKey);
+                }, 2500);
+            } else {
+                // Normal Load
                 window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) })
                 .then(res => { if(res.status==='success') setMessages(res.messages); });
             }
-        } else {
-            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) })
-            .then(res => { if(res.status==='success') setMessages(res.messages); });
-        }
+        };
+        loadThread();
     }, [ticket]);
 
     React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
@@ -1611,7 +1620,8 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                 {isThinking && (
                     <div className="flex justify-start animate-pulse">
                         <div className="bg-teal-50 border border-teal-100 text-teal-800 p-3 rounded-lg text-xs flex items-center gap-2">
-                            <window.Icons.Sparkles size={12}/> Second Mate is thinking...
+                            <window.Icons.Sparkles size={12}/> 
+                            {messages.length === 0 ? "Second Mate is analyzing your request..." : "Second Mate is typing..."}
                         </div>
                     </div>
                 )}
@@ -1703,8 +1713,31 @@ const CreateTicketModal = ({ token, onClose, role }) => {
         };
         if (isAdmin && selectedClient) payload.target_client_id = selectedClient.id;
 
+        // Show immediate feedback
+        const btn = e.target.querySelector('button');
+        const originalText = btn.innerText;
+        btn.innerText = "Opening secure channel...";
+        btn.disabled = true;
+
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
-        if (res.status === 'success') onClose(); else alert(res.message);
+        
+        if (res.status === 'success') {
+            onClose();
+            // 1. Set navigation target
+            const navData = { view: 'support', target_id: res.ticket_id };
+            localStorage.setItem('pending_nav', JSON.stringify(navData));
+            
+            // 2. Simulate "Thinking" delay for the very first message
+            // We set a flag so TicketThread knows to show the spinner
+            localStorage.setItem('ai_thinking_' + res.ticket_id, 'true');
+
+            // 3. Switch View
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'support' }));
+        } else {
+            alert(res.message);
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
     };
 
     // Filter Logic
