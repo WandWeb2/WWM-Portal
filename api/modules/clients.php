@@ -49,10 +49,17 @@ function handleFixUserAccount($pdo, $i, $s) {
     $status = $i['status'];
     
     error_log("[FIX_USER] Starting fix for User #$uid -> role='$role', status='$status'");
-    error_log("[FIX_USER] Input role type: " . gettype($i['role']) . ", Input status type: " . gettype($i['status']));
     if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Attempting fix for User #$uid -> $role / $status", 'warning');
 
     try {
+        // 0. FIRST: Ensure the role enum includes 'partner'
+        try {
+            $pdo->exec("ALTER TABLE users MODIFY role enum('admin','client','partner') DEFAULT 'client'");
+            error_log("[FIX_USER] Updated role enum to include 'partner'");
+        } catch (Exception $alterErr) {
+            error_log("[FIX_USER] Alter table warning (may already exist): " . $alterErr->getMessage());
+        }
+        
         // 1. Verify User Exists FIRST
         $check = $pdo->prepare("SELECT id, full_name FROM users WHERE id = ?");
         $check->execute([$uid]);
