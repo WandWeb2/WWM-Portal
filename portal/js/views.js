@@ -98,11 +98,9 @@ const TaskManager = ({ project, token, role, onClose }) => {
     const [details, setDetails] = React.useState({ tasks: [], comments: [] });
     const [msg, setMsg] = React.useState("");
     const [newTask, setNewTask] = React.useState("");
-    const [fileUrl, setFileUrl] = React.useState("");
-    const [fileName, setFileName] = React.useState("");
     const [showFileUpload, setShowFileUpload] = React.useState(false);
-    const [uploadMode, setUploadMode] = React.useState('cloud'); // 'cloud' or 'file'
-    const [selectedFile, setSelectedFile] = React.useState(null);
+    const [selectedFiles, setSelectedFiles] = React.useState([]); // Changed to array
+    const [isUploading, setIsUploading] = React.useState(false);
 
     const load = async () => {
         const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_project_details', token, project_id: project.id }) });
@@ -119,7 +117,7 @@ const TaskManager = ({ project, token, role, onClose }) => {
         const updated = (details.tasks || []).map(t => { if (t.id === id) return { ...t, is_complete: !current }; return t; }); 
         setDetails({ ...details, tasks: updated }); 
         await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'toggle_task', token, id, is_complete: !current ? 1 : 0 }) }); 
-        load(); // Reload to get updated health score
+        load(); 
     };
 
     const deleteTask = async (id) => {
@@ -132,48 +130,36 @@ const TaskManager = ({ project, token, role, onClose }) => {
     
     const handleFileUpload = async (e) => {
         e.preventDefault();
+        if (selectedFiles.length === 0) return;
         
-        if (uploadMode === 'cloud') {
-            // Cloud link upload
-            if (!fileUrl.trim() || !fileName.trim()) return;
-            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_file', token, project_id: project.id, external_url: fileUrl, filename: fileName, file_type: 'external', filesize: '0' }) });
-            if (res.status === 'success') {
-                setFileUrl("");
-                setFileName("");
-                setShowFileUpload(false);
-                setSelectedFile(null);
-                load();
-            } else {
-                alert('Upload failed: ' + res.message);
-            }
-        } else {
-            // Actual file upload
-            if (!selectedFile) return;
-            
+        setIsUploading(true);
+        let uploadedCount = 0;
+
+        // Upload files sequentially
+        for (const file of selectedFiles) {
             const formData = new FormData();
-            formData.append('file', selectedFile);
-            formData.append('action', 'upload_file'); // Updated to use Drive Integration
+            formData.append('file', file);
+            formData.append('action', 'upload_file'); 
             formData.append('token', token);
             formData.append('project_id', project.id);
             
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch(API_URL, { method: 'POST', body: formData });
                 const res = await response.json();
-                
-                if (res.status === 'success') {
-                    setFileName("");
-                    setShowFileUpload(false);
-                    setSelectedFile(null);
-                    load();
-                } else {
-                    alert('Upload failed: ' + res.message);
-                }
+                if (res.status === 'success') uploadedCount++;
             } catch (error) {
-                alert('Upload failed: Network error');
+                console.error("Upload failed for " + file.name);
             }
+        }
+
+        setIsUploading(false);
+        if (uploadedCount > 0) {
+            setShowFileUpload(false);
+            setSelectedFiles([]);
+            load(); // Reload chat to see the new file announcements
+            if (uploadedCount < selectedFiles.length) alert(`Uploaded ${uploadedCount} of ${selectedFiles.length} files.`);
+        } else {
+            alert('Upload failed. Please try again.');
         }
     };
     
@@ -230,49 +216,48 @@ const TaskManager = ({ project, token, role, onClose }) => {
                         </button>
                     </div>
                     {showFileUpload && (
-                        <div className="p-4 border-b bg-white">
-                            <div className="flex gap-2 mb-3">
-                                <button 
-                                    type="button" 
-                                    onClick={() => setUploadMode('cloud')} 
-                                    className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${uploadMode === 'cloud' ? 'bg-[#2493a2] text-white' : 'bg-slate-100 text-slate-600'}`}
-                                >
-                                    <Icons.Link size={14} className="inline mr-1"/> Cloud Link
-                                </button>
-                                <button 
-                                    type="button" 
-                                    onClick={() => setUploadMode('file')} 
-                                    className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${uploadMode === 'file' ? 'bg-[#2493a2] text-white' : 'bg-slate-100 text-slate-600'}`}
-                                >
-                                    <Icons.Upload size={14} className="inline mr-1"/> Upload File
-                                </button>
-                            </div>
-                            <form onSubmit={handleFileUpload} className="space-y-2">
-                                {uploadMode === 'cloud' ? (
-                                    <>
-                                        <input className="w-full p-2 border rounded text-xs" placeholder="File name" value={fileName} onChange={e=>setFileName(e.target.value)} required/>
-                                        <input className="w-full p-2 border rounded text-xs" placeholder="File URL (e.g., Google Drive, Dropbox)" value={fileUrl} onChange={e=>setFileUrl(e.target.value)} required/>
-                                    </>
-                                ) : (
-                                    <div className="space-y-2">
-                                        <input 
-                                            type="file" 
-                                            onChange={(e) => setSelectedFile(e.target.files[0])} 
-                                            className="w-full text-xs file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#2493a2] file:text-white hover:file:bg-[#1d7a87] file:cursor-pointer"
-                                            required
-                                        />
-                                        {selectedFile && (
-                                            <div className="text-xs text-slate-600 p-2 bg-slate-50 rounded">
-                                                Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                        <div className="p-4 border-b bg-white animate-fade-in">
+                            <form onSubmit={handleFileUpload} className="space-y-3">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">Upload to Project Drive</label>
+                                    <input 
+                                        type="file" 
+                                        multiple
+                                        onChange={(e) => setSelectedFiles(Array.from(e.target.files))} 
+                                        className="w-full text-xs file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#2c3259] file:text-white hover:file:bg-[#1d7a87] file:cursor-pointer border border-slate-200 rounded p-1"
+                                        required
+                                        disabled={isUploading}
+                                    />
+                                    {selectedFiles.length > 0 && (
+                                        <div className="text-xs text-slate-600 p-2 bg-slate-50 rounded">
+                                            <div className="font-bold mb-1">{selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected</div>
+                                            <div className="max-h-20 overflow-y-auto space-y-1">
+                                                {selectedFiles.map((f, i) => (
+                                                    <div key={i} className="text-[10px] text-slate-400 truncate flex justify-between">
+                                                        <span>• {f.name}</span>
+                                                        <span>{(f.size/1024).toFixed(0)}KB</span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        )}
-                                    </div>
-                                )}
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="flex gap-2">
-                                    <button type="submit" className="flex-1 bg-[#2493a2] text-white p-2 rounded text-xs font-bold">
-                                        {uploadMode === 'cloud' ? 'Add Link' : 'Upload File'}
+                                    <button 
+                                        type="submit" 
+                                        disabled={isUploading || selectedFiles.length === 0}
+                                        className={`flex-1 text-white p-2 rounded text-xs font-bold flex items-center justify-center gap-2 ${isUploading ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#2493a2] hover:bg-[#1d7a87]'}`}
+                                    >
+                                        {isUploading ? <><Icons.Loader size={14} className="animate-spin"/> Uploading...</> : 'Upload Files'}
                                     </button>
-                                    <button type="button" onClick={() => { setShowFileUpload(false); setSelectedFile(null); }} className="px-3 py-2 text-slate-600 text-xs">Cancel</button>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setShowFileUpload(false); setSelectedFiles([]); }} 
+                                        className="px-3 py-2 text-slate-600 text-xs border rounded hover:bg-slate-50"
+                                        disabled={isUploading}
+                                    >
+                                        Cancel
+                                    </button>
                                 </div>
                             </form>
                         </div>
