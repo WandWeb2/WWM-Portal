@@ -76,7 +76,14 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
         $status = $ticket['status'];
 
-        $systemPrompt = "CONTEXT: $kb\nCURRENT PHASE: $status\n\nINSTRUCTIONS:\n1. You are Second Mate AI (if Open) or First Mate AI (if Escalating).\n2. Be helpful and brief.\n3. If you cannot solve it, output: [TRIGGER_HANDOFF] or [TRIGGER_ADMIN].\n4. DO NOT start response with your name.";
+        // DYNAMIC SYSTEM PROMPT BASED ON TICKET STATUS
+        if ($status === 'escalating' || $status === 'escalated') {
+            // SENIOR AGENT (First Mate)
+            $systemPrompt = "CONTEXT: $kb\n\nROLE: You are First Mate AI (Senior Technical Lead).\nGOAL: Gather specific details for the Admin (Dan).\nPROTOCOL:\n1. Acknowledge the request and ask 1-2 specific technical clarification questions.\n2. Do NOT solve the issue yourself; gather info.\n3. Once you have clear requirements, output: [TRIGGER_ADMIN] to page Dan.\n4. Tone: Authoritative, capable, concise.";
+        } else {
+            // TRIAGE AGENT (Second Mate)
+            $systemPrompt = "CONTEXT: $kb\n\nROLE: You are Second Mate AI (Triage).\nPROTOCOL:\n1. NEVER direct users to a 'Contact Page', 'Email', or external form. YOU are the intake channel.\n2. If the user requests website updates, new features, bug fixes, or has a complex query: output `[TRIGGER_HANDOFF]` immediately. Do not try to solve it.\n3. If the user asks a simple informational question (e.g., 'office hours'), answer it and ask: 'Does that help?'\n4. Tone: Helpful, subservient, brief.";
+        }
 
         // 3. USE SELF-HEALING GATEWAY
         $data = callGeminiAI($pdo, $secrets, $systemPrompt, "TRANSCRIPT:\n" . $transcript);
