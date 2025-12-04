@@ -46,6 +46,9 @@ function ensureProjectSchema($pdo) {
         filesize VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )");
+    
+    // Self-repair: add missing columns
+    try { $pdo->exec("ALTER TABLE projects ADD COLUMN manager_id INT DEFAULT 0"); } catch (Exception $e) {}
 }
 
 function recalcProjectHealth($pdo, $pid) {
@@ -67,8 +70,8 @@ function handleGetProjects($pdo, $i) {
 
     if ($u['role'] === 'admin') {
         $s = $pdo->query(
-            "SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') AS client_name
-             FROM projects p LEFT JOIN users u ON p.user_id = u.id
+            "SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') AS client_name, COALESCE(m.full_name, '') AS manager_name
+             FROM projects p LEFT JOIN users u ON p.user_id = u.id LEFT JOIN users m ON p.manager_id = m.id
              ORDER BY CASE p.status 
                 WHEN 'active' THEN 1 
                 WHEN 'onboarding' THEN 2 
@@ -79,9 +82,10 @@ function handleGetProjects($pdo, $i) {
         );
     } elseif ($u['role'] === 'partner') {
         ensurePartnerSchema($pdo);
-        $sql = "SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') AS client_name
+        $sql = "SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') AS client_name, COALESCE(m.full_name, '') AS manager_name
                 FROM projects p
                 LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN users m ON p.manager_id = m.id
                 WHERE p.user_id = ? OR p.user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id = ?)
                 ORDER BY CASE p.status 
                     WHEN 'active' THEN 1 
@@ -93,7 +97,7 @@ function handleGetProjects($pdo, $i) {
         $s = $pdo->prepare($sql);
         $s->execute([$u['uid'], $u['uid']]);
     } else {
-        $s = $pdo->prepare("SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') AS client_name FROM projects p LEFT JOIN users u ON p.user_id = u.id WHERE p.user_id = ? ORDER BY p.created_at DESC");
+        $s = $pdo->prepare("SELECT p.*, COALESCE(NULLIF(u.full_name, ''), NULLIF(u.email, ''), 'Unassigned') AS client_name, COALESCE(m.full_name, '') AS manager_name FROM projects p LEFT JOIN users u ON p.user_id = u.id LEFT JOIN users m ON p.manager_id = m.id WHERE p.user_id = ? ORDER BY p.created_at DESC");
         $s->execute([$u['uid']]);
     }
 
@@ -106,9 +110,23 @@ function handleCreateProject($pdo, $i) {
     ensureProjectSchema($pdo);
 
     $clientId = (int)($i['client_id'] ?? 0);
+    $managerId = (int)($i['manager_id'] ?? 0);
     $title = strip_tags($i['title'] ?? 'Untitled Project');
-    $stmt = $pdo->prepare("INSERT INTO projects (user_id, title, status, health_score) VALUES (?, ?, 'onboarding', 0)");
-    $stmt->execute([$clientId, $title]);
+    $stmt = $pdo->prepare("INSERT INTO projects (user_id, manager_id, title, status, health_score) VALUES (?, ?, ?, 'onboarding', 0)");
+    $stmt->execute([$clientId, $managerId, $title]);
+    $projectId = $pdo->lastInsertId();
+    
+    // If created from a ticket, close the ticket and log messages
+    if (!empty($i['source_ticket_id'])) {
+        $tid = (int)$i['source_ticket_id'];
+        $pdo->prepare("UPDATE tickets SET status = 'closed' WHERE id = ?")->execute([$tid]);
+        $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")
+            ->execute([$tid, "[System] Project created. Closing thread. Further communication will take place in the Project Portal."]);
+        // Insert system comment in project
+        $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, 0, ?, 'project', 0)")
+            ->execute([$projectId, "[System] Project initialized from Support Ticket #$tid."]);
+    }
+    
     sendJson('success', 'Created');
 }
 
@@ -323,12 +341,24 @@ function handleAICreateProject($pdo, $i, $s) {
     if (!$plan || empty($plan['title'])) sendJson('error', 'AI Generation Failed. Please try again.');
 
     // 4. Execute DB Transactions
+    $managerId = (int)($i['manager_id'] ?? 0);
     $pdo->beginTransaction();
     try {
         // Insert Project
-        $stmt = $pdo->prepare("INSERT INTO projects (user_id, title, description, status, health_score) VALUES (?, ?, ?, 'active', 100)");
-        $stmt->execute([$clientId, $plan['title'], $plan['description']]);
+        $stmt = $pdo->prepare("INSERT INTO projects (user_id, manager_id, title, description, status, health_score) VALUES (?, ?, ?, ?, 'active', 100)");
+        $stmt->execute([$clientId, $managerId, $plan['title'], $plan['description']]);
         $pid = $pdo->lastInsertId();
+        
+        // If created from a ticket, close the ticket and log messages
+        if (!empty($i['source_ticket_id'])) {
+            $tid = (int)$i['source_ticket_id'];
+            $pdo->prepare("UPDATE tickets SET status = 'closed' WHERE id = ?")->execute([$tid]);
+            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")
+                ->execute([$tid, "[System] Project created. Closing thread. Further communication will take place in the Project Portal."]);
+            // Insert system comment in project
+            $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, 0, ?, 'project', 0)")
+                ->execute([$pid, "[System] Project initialized from Support Ticket #$tid."]);
+        }
         
         // Insert Tasks
         if (!empty($plan['tasks'])) {

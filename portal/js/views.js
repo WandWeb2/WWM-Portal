@@ -94,7 +94,6 @@ const TaskManager = ({ project, token, onClose }) => {
     const [details, setDetails] = React.useState({ tasks: [], comments: [] });
     const [msg, setMsg] = React.useState("");
     const [newTask, setNewTask] = React.useState("");
-    const [activeTask, setActiveTask] = React.useState(null);
 
     const load = async () => {
         const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_project_details', token, project_id: project.id }) });
@@ -118,45 +117,48 @@ const TaskManager = ({ project, token, onClose }) => {
         load();
     };
 
-    const sendComment = async (e) => { e.preventDefault(); if(!msg.trim()) return; await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'post_comment', token, project_id: project.id, message: msg, target_type: activeTask ? 'task' : 'project', target_id: activeTask ? activeTask.id : 0 }) }); setMsg(""); load(); };
+    const sendComment = async (e) => { e.preventDefault(); if(!msg.trim()) return; await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'post_comment', token, project_id: project.id, message: msg, target_type: 'project', target_id: 0 }) }); setMsg(""); load(); };
     
-    const comments = (details.comments || []).filter(c => activeTask ? (c.target_type === 'task' && c.target_id == activeTask.id) : (c.target_type === 'project'));
+    const comments = (details.comments || []).filter(c => c.target_type === 'project');
 
     return (
         <div className="fixed inset-0 bg-[#2c3259]/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex overflow-hidden">
-                <div className="flex-1 flex flex-col border-r border-slate-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex overflow-hidden">
+                <div className="flex-1 flex flex-col">
                     <div className="p-6 border-b flex justify-between items-center">
                         <div><h2 className="text-xl font-bold text-[#2c3259]">{project.title}</h2></div>
-                        <div className="flex gap-2"><button onClick={() => setActiveTask(null)} className="px-3 py-1 text-sm font-bold text-[#2493a2]">Project Chat</button><button onClick={onClose}><Icons.Close/></button></div>
+                        <button onClick={onClose}><Icons.Close/></button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-6">
-                        <div className="flex gap-2 mb-6"><input className="flex-1 p-3 border rounded-lg" placeholder="New Task..." value={newTask} onChange={e=>setNewTask(e.target.value)} /><button onClick={addTask} className="bg-[#2c3259] text-white px-4 rounded-lg"><Icons.Plus/></button></div>
-                        <div className="space-y-2">
-                            {(details.tasks || []).map(task => {
-                                const isChecked = Number(task.is_complete) === 1;
-                                return (
-                                    <div key={task.id} onClick={() => setActiveTask(task)} className={`p-4 border rounded-xl flex items-center gap-3 cursor-pointer group transition-colors ${activeTask?.id === task.id ? 'border-[#dba000] bg-orange-50' : 'border-slate-200 hover:border-blue-300'}`}>
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); toggleTask(task.id, isChecked); }} 
-                                            className={`w-6 h-6 rounded-sm border flex items-center justify-center transition-colors ${isChecked ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300'}`}
-                                        >
-                                            {isChecked ? <Icons.Check size={14}/> : null} 
-                                        </button>
-                                        <span className={`flex-1 ${isChecked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{task.title}</span>
-                                        <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <Icons.Trash size={14}/>
-                                        </button>
-                                    </div>
-                                );
-                            })}
+                    <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+                        <div>
+                            <h3 className="font-bold text-slate-800 mb-4">Tasks</h3>
+                            <div className="flex gap-2 mb-4"><input className="flex-1 p-3 border rounded-lg text-sm" placeholder="New Task..." value={newTask} onChange={e=>setNewTask(e.target.value)} /><button onClick={addTask} className="bg-[#2c3259] text-white px-4 rounded-lg"><Icons.Plus/></button></div>
+                            <div className="space-y-2">
+                                {(details.tasks || []).map(task => {
+                                    const isChecked = Number(task.is_complete) === 1;
+                                    return (
+                                        <div key={task.id} className={`p-4 border rounded-xl flex items-center gap-3 group transition-colors ${isChecked ? 'bg-slate-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                                            <button 
+                                                onClick={() => toggleTask(task.id, isChecked)} 
+                                                className={`w-6 h-6 rounded-sm border flex items-center justify-center transition-colors flex-shrink-0 ${isChecked ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300'}`}
+                                            >
+                                                {isChecked ? <Icons.Check size={14}/> : null} 
+                                            </button>
+                                            <span className={`flex-1 ${isChecked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{task.title}</span>
+                                            <button onClick={() => deleteTask(task.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Icons.Trash size={14}/>
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <div className="border-t pt-6">
+                            <h3 className="font-bold text-slate-800 mb-4">Project Chat</h3>
+                            <div className="flex-1 overflow-y-auto space-y-3 mb-4 max-h-64">{comments.map(c => <div key={c.id} className="bg-slate-50 p-3 rounded-lg border text-sm"><p className="font-bold text-xs text-[#2c3259] mb-1">{c.author || c.full_name}</p><div className="text-slate-700 whitespace-pre-wrap">{window.formatTextWithLinks(c.message)}</div></div>)}</div>
+                            <form onSubmit={sendComment} className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Send project message..."/><button className="bg-[#dba000] text-white p-2 rounded"><Icons.Send/></button></form>
                         </div>
                     </div>
-                </div>
-                <div className="w-96 flex flex-col bg-slate-50">
-                    <div className="p-4 border-b"><h3 className="font-bold text-slate-800">{activeTask ? 'Task Chat' : 'Project Chat'}</h3></div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">{comments.map(c => <div key={c.id} className="bg-white p-3 rounded-lg shadow-sm border text-sm"><p className="font-bold text-xs text-[#2c3259] mb-1">{c.full_name}</p>{c.message}</div>)}</div>
-                    <form onSubmit={sendComment} className="p-4 border-t flex gap-2"><input className="flex-1 p-2 border rounded" value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Message..."/><button className="bg-[#dba000] text-white p-2 rounded"><Icons.Send/></button></form>
                 </div>
             </div>
         </div>
