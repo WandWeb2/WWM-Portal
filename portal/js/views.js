@@ -565,19 +565,14 @@ window.SettingsView = ({ token, role }) => {
 
     // Auto-navigate to partners tab if user was just fixed
     React.useEffect(() => {
-        console.log('[SettingsView Mount] Checking for _justFixedUser flag...');
         const fixed = sessionStorage.getItem('_justFixedUser');
-        console.log('[SettingsView Mount] Flag:', fixed);
         if (fixed) {
-            const msg = JSON.parse(fixed);
-            console.log(`[SettingsView Mount] AUTO-NAV to partners tab for user #${msg.id}`);
             setActiveTab('partners');
             sessionStorage.removeItem('_justFixedUser');
             setTimeout(() => {
+                const msg = JSON.parse(fixed);
                 alert(`✓ User #${msg.id} is now a ${msg.role.toUpperCase()}. Check Partners tab.`);
-            }, 500);
-        } else {
-            console.log('[SettingsView Mount] No flag, starting at audit tab');
+            }, 100);
         }
     }, []);
 
@@ -617,17 +612,9 @@ window.SettingsView = ({ token, role }) => {
 
     const fetchPartners = async () => {
         setLoading(true);
-        console.log('[Partners Tab] Fetching partners...');
         const pRes = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_partners', token }) });
-        console.log('[Partners Tab] API Response:', pRes);
-        if (pRes.status === 'success') {
-            console.log('[Partners Tab] Partners:', pRes.partners);
-            setPartners(pRes.partners || []);
-        } else {
-            console.error('[Partners Tab] Failed:', pRes.message);
-        }
+        if (pRes.status === 'success') setPartners(pRes.partners || []);
         const cRes = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
-        console.log('[Partners Tab] Clients Response:', cRes.clients);
         if (cRes.status === 'success') setClients((cRes.clients || []).filter(c => c.role === 'client'));
         setLoading(false);
     };
@@ -642,7 +629,6 @@ window.SettingsView = ({ token, role }) => {
     };
     
     const handleForceFix = async (userId, role, status) => {
-        console.log(`[Make Partner] Clicked for User #${userId}, role=${role}, status=${status}`);
         const btn = document.activeElement;
         const originalText = btn.innerText;
         btn.innerText = "...";
@@ -650,18 +636,13 @@ window.SettingsView = ({ token, role }) => {
 
         // Call the safer backend
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'fix_user_account', token, target_user_id: userId, role, status }) });
-        console.log('[Make Partner] API Response:', res);
         
         if (res.status === 'success') { 
-            console.log(`[Make Partner] SUCCESS - Setting sessionStorage and reloading`);
-            sessionStorage.setItem('_justFixedUser', JSON.stringify({id: userId, role, status, timestamp: Date.now()}));
-            console.log(`[Make Partner] sessionStorage set:`, sessionStorage.getItem('_justFixedUser'));
             alert("Account recovered successfully. Reloading to apply changes...");
-            console.log(`[Make Partner] About to reload...`);
-            setTimeout(() => {
-                console.log('[Make Partner] RELOADING PAGE');
-                window.location.reload(); 
-            }, 100); 
+            // Store the target role/status so we can verify after reload
+            sessionStorage.setItem('_justFixedUser', JSON.stringify({id: userId, role, status, timestamp: Date.now()}));
+            // Force hard reload to ensure all lists (Partners/Clients) are rebuilt from scratch
+            setTimeout(() => window.location.reload(), 100); 
         } else {
             alert("Error: " + (res.message || 'Action failed'));
             btn.innerText = originalText;
@@ -794,18 +775,30 @@ window.SettingsView = ({ token, role }) => {
             )}
 
             {activeTab === 'logs' && (
-                <div className="bg-slate-900 text-green-400 p-4 rounded-xl font-mono text-xs h-[500px] overflow-y-auto">
-                    <div className="flex justify-between border-b border-slate-700 pb-2 mb-2">
-                        <span className="font-bold text-white">System Logs</span>
-                        <button onClick={fetchLogs} className="text-blue-400 hover:underline">Refresh</button>
+                <div className="space-y-4">
+                    <div className="grid grid-cols-5 gap-2">
+                        <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_log', token, message: 'Test Debug 1' }) }); setTimeout(fetchLogs, 500); }} className="bg-blue-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-blue-700">Debug 1</button>
+                        <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_log', token, message: 'Test Debug 2' }) }); setTimeout(fetchLogs, 500); }} className="bg-purple-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-purple-700">Debug 2</button>
+                        <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_log', token, message: 'Test Debug 3' }) }); setTimeout(fetchLogs, 500); }} className="bg-indigo-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-indigo-700">Debug 3</button>
+                        <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_log', token, message: 'Test Debug 4' }) }); setTimeout(fetchLogs, 500); }} className="bg-cyan-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-cyan-700">Debug 4</button>
+                        <button onClick={() => { setSysLogs([]); fetchLogs(); }} className="bg-red-600 text-white px-3 py-2 rounded text-xs font-bold hover:bg-red-700">Refresh</button>
                     </div>
-                    {sysLogs.length === 0 ? <div className="text-slate-500 italic">No logs found.</div> : sysLogs.map(l => (
-                        <div key={l.id} className="mb-1 border-b border-slate-800 pb-1 last:border-0">
-                            <span className="text-slate-500 mr-2">[{new Date(l.created_at).toLocaleTimeString()}]</span>
-                            <span className={`uppercase font-bold mr-2 ${l.level==='error'?'text-red-500':(l.level==='success'?'text-green-500':'text-blue-400')}`}>{l.level}</span>
-                            <span>{l.message}</span>
+                    <div className="bg-slate-900 text-green-400 p-4 rounded-xl font-mono text-xs h-[500px] overflow-y-auto">
+                        <div className="flex justify-between border-b border-slate-700 pb-2 mb-2">
+                            <span className="font-bold text-white">System Logs</span>
                         </div>
-                    ))}
+                        {sysLogs.length === 0 ? <div className="text-slate-500 italic">No logs found.</div> : (
+                            <>
+                                {sysLogs.map(l => (
+                                    <div key={l.id} className="mb-1 border-b border-slate-800 pb-1 last:border-0">
+                                        <span className="text-slate-500 mr-2">[{new Date(l.created_at).toLocaleTimeString()}]</span>
+                                        <span className={`uppercase font-bold mr-2 ${l.level==='error'?'text-red-500':(l.level==='success'?'text-green-500':'text-blue-400')}`}>{l.level}</span>
+                                        <span>{l.message}</span>
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

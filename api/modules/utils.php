@@ -418,4 +418,13 @@ function handleGetSystemLogs($pdo, $i) {
     $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100");
     sendJson('success', 'Logs Loaded', ['logs' => $stmt->fetchAll()]);
 }
+
+function handleDebugLog($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureLogSchema($pdo);
+    $msg = $i['message'] ?? 'Debug action triggered';
+    logSystemEvent($pdo, $msg, 'info');
+    sendJson('success', 'Debug log added');
+}
 ?>
