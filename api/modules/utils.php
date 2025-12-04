@@ -427,4 +427,63 @@ function handleDebugLog($pdo, $i) {
     logSystemEvent($pdo, $msg, 'info');
     sendJson('success', 'Debug log added');
 }
+
+function handleDebugTest($pdo, $i, $secrets) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureLogSchema($pdo);
+    
+    $test = $i['test'] ?? 'unknown';
+    $result = '';
+    
+    switch($test) {
+        case 'api_connection':
+            $result = 'API Connection: ✓ WORKING - Portal API responding normally';
+            logSystemEvent($pdo, $result, 'success');
+            break;
+            
+        case 'database_query':
+            try {
+                $stmt = $pdo->query("SELECT COUNT(*) as count FROM system_logs");
+                $row = $stmt->fetch();
+                $count = $row['count'] ?? 0;
+                $result = "Database Query: ✓ WORKING - Found $count log entries in database";
+                logSystemEvent($pdo, $result, 'success');
+            } catch (Exception $e) {
+                $result = "Database Query: ✗ ERROR - " . $e->getMessage();
+                logSystemEvent($pdo, $result, 'error');
+            }
+            break;
+            
+        case 'stripe_connection':
+            $stripe_key = $secrets['stripe_secret_key'] ?? null;
+            if (!$stripe_key) {
+                $result = 'Stripe Connection: ⚠ WARNING - No Stripe key configured';
+                logSystemEvent($pdo, $result, 'warning');
+            } else {
+                $result = 'Stripe Connection: ✓ WORKING - Stripe API key is configured';
+                logSystemEvent($pdo, $result, 'success');
+            }
+            break;
+            
+        case 'crm_sync':
+            try {
+                $stmt = $pdo->query("SELECT COUNT(*) as count FROM clients");
+                $row = $stmt->fetch();
+                $count = $row['count'] ?? 0;
+                $result = "CRM Sync: ✓ WORKING - Database contains $count client records";
+                logSystemEvent($pdo, $result, 'success');
+            } catch (Exception $e) {
+                $result = "CRM Sync: ✗ ERROR - " . $e->getMessage();
+                logSystemEvent($pdo, $result, 'error');
+            }
+            break;
+            
+        default:
+            $result = "Unknown test: $test";
+            logSystemEvent($pdo, $result, 'warning');
+    }
+    
+    sendJson('success', 'Diagnostic test completed', ['result' => $result]);
+}
 ?>

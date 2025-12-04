@@ -166,6 +166,7 @@ try {
         case 'get_partner_dashboard': handleGetPartnerDashboard($pdo, $input); break;
         case 'get_system_logs': handleGetSystemLogs($pdo, $input); break; // Fixed
         case 'debug_log': handleDebugLog($pdo, $input); break; // Debug logging for portal
+        case 'debug_test': handleDebugTest($pdo, $input, $secrets); break; // Diagnostic tests
 
         default: 
             ob_clean();
