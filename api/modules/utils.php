@@ -383,4 +383,33 @@ function internalGeminiRequest($apiKey, $model, $sys, $user) {
     
     return json_decode($res, true);
 }
+
+// === SYSTEM LOGGING ===
+function ensureLogSchema($pdo) {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        level VARCHAR(20),
+        message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
+}
+
+function logSystemEvent($pdo, $message, $level = 'info') {
+    try {
+        ensureLogSchema($pdo);
+        $stmt = $pdo->prepare("INSERT INTO system_logs (level, message) VALUES (?, ?)");
+        $stmt->execute([$level, $message]);
+    } catch (Exception $e) { 
+        // Fallback to error_log if DB fails
+        error_log("DB LOG FAILED: $message"); 
+    }
+}
+
+function handleGetSystemLogs($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureLogSchema($pdo);
+    $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100");
+    sendJson('success', 'Logs Loaded', ['logs' => $stmt->fetchAll()]);
+}
 ?>

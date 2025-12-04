@@ -1,6 +1,6 @@
 <?php
 // /api/modules/clients.php
-// Version: 32.1 - Partner Portal, Audit Tools & Resilient Sync
+// Version: 33.0 - AI Restored & Debug Logging Added
 
 // [HELPER] Sync local user data to Stripe & CRM
 function syncClientToExternal($pdo, $uid, $secrets) {
@@ -10,28 +10,24 @@ function syncClientToExternal($pdo, $uid, $secrets) {
         $u = $s->fetch();
         if (!$u) return;
 
-        // Sync to Stripe if ID exists
         if(!empty($u['stripe_id']) && function_exists('stripeRequest')) {
             stripeRequest($secrets, 'POST', "customers/{$u['stripe_id']}", [
                 'name' => $u['full_name'],
-                'phone' => $u['phone'],
                 'email' => $u['email'],
                 'metadata' => ['business_name' => $u['business_name']]
             ]);
         }
-
-        // Sync to CRM
+        
         if(function_exists('pushToSwipeOne')) {
             pushToSwipeOne($secrets, 'contacts', [
                 'email' => $u['email'],
                 'firstName' => $u['full_name'],
-                'phone' => $u['phone'],
                 'properties' => ['business_name' => $u['business_name']]
             ]);
         }
+        logSystemEvent($pdo, "Synced User #$uid to external systems.", 'info');
     } catch (Exception $e) {
-        // Silently log sync error but DO NOT crash the application
-        error_log("External Sync Error for User $uid: " . $e->getMessage());
+        logSystemEvent($pdo, "Sync Failed for User #$uid: " . $e->getMessage(), 'error');
     }
 }
 
@@ -43,7 +39,7 @@ function handleGetAllUsers($pdo, $i) {
     sendJson('success', 'Audit List Loaded', ['users' => $stmt->fetchAll()]);
 }
 
-// [RECOVERY] Force Fix Account
+// [RECOVERY] Force Fix Account with Logging
 function handleFixUserAccount($pdo, $i, $s) {
     $u = verifyAuth($i);
     if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
@@ -52,15 +48,23 @@ function handleFixUserAccount($pdo, $i, $s) {
     $role = strtolower(trim($i['role'])); 
     $status = $i['status'];
     
-    // Execute DB Update
+    logSystemEvent($pdo, "Admin attempting to force update User #$uid to Role: $role, Status: $status", 'warning');
+
     try {
-        $pdo->prepare("UPDATE users SET role = ?, status = ? WHERE id = ?")->execute([$role, $status, $uid]);
+        $stmt = $pdo->prepare("UPDATE users SET role = ?, status = ? WHERE id = ?");
+        $stmt->execute([$role, $status, $uid]);
+        $count = $stmt->rowCount();
         
-        // Attempt Sync (Safe Mode - Errors caught inside function)
-        syncClientToExternal($pdo, $uid, $s);
-        
-        sendJson('success', 'Account Repaired');
+        if ($count > 0) {
+            logSystemEvent($pdo, "Success: Updated User #$uid. Rows affected: $count", 'success');
+            syncClientToExternal($pdo, $uid, $s);
+            sendJson('success', 'Account Repaired');
+        } else {
+            logSystemEvent($pdo, "Failure: Update executed but no rows changed for User #$uid. ID may not exist.", 'error');
+            sendJson('error', 'No user found with that ID.');
+        }
     } catch (Exception $e) {
+        logSystemEvent($pdo, "DB Crash during update: " . $e->getMessage(), 'error');
         sendJson('error', 'Database Error: ' . $e->getMessage());
     }
 }

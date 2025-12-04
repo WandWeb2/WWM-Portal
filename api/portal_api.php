@@ -148,6 +148,7 @@ try {
         // Settings
         case 'get_settings': handleGetSettings($pdo, $input); break;
         case 'update_settings': handleUpdateSettings($pdo, $input); break;
+        case 'get_system_logs': handleGetSystemLogs($pdo, $input); break;
 
         // Recovery & Partner Tools
         case 'get_all_users': handleGetAllUsers($pdo, $input); break;

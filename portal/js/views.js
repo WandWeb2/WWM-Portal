@@ -557,6 +557,7 @@ window.SettingsView = ({ token, role }) => {
     const [clients, setClients] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
     const [logs, setLogs] = React.useState([]);
+    const [sysLogs, setSysLogs] = React.useState([]);
     const [showAssignModal, setShowAssignModal] = React.useState(false);
     const [selectedPartner, setSelectedPartner] = React.useState(null);
 
@@ -566,7 +567,13 @@ window.SettingsView = ({ token, role }) => {
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'partners') fetchPartners();
         if (activeTab === 'audit') fetchAudit();
+        if (activeTab === 'logs') fetchLogs();
     }, [activeTab]);
+
+    const fetchLogs = async () => {
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_system_logs', token }) });
+        if (res.status === 'success') setSysLogs(res.logs || []);
+    };
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -632,7 +639,7 @@ window.SettingsView = ({ token, role }) => {
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="flex gap-4 border-b border-slate-200 pb-1 overflow-x-auto">
-                {['admin_controls', 'users', 'partners', 'audit'].map(t => (
+                {['admin_controls', 'users', 'partners', 'audit', 'logs'].map(t => (
                     <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 text-sm font-bold capitalize whitespace-nowrap ${activeTab === t ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>{t.replace('_', ' ')}</button>
                 ))}
             </div>
@@ -732,6 +739,22 @@ window.SettingsView = ({ token, role }) => {
                         <div className="p-6 border-b flex justify-between items-center"><h3 className="font-bold text-lg">Assign Client to {selectedPartner.full_name}</h3><button onClick={() => setShowAssignModal(false)}><Icons.Close/></button></div>
                         <div className="p-6"><p className="text-sm text-slate-600 mb-4">Select a client to assign:</p><div className="space-y-2 max-h-80 overflow-y-auto">{clients.map(c => (<button key={c.id} onClick={() => handleAssignClient(c.id)} className="w-full text-left p-3 border rounded hover:bg-slate-50 transition-colors"><div className="font-bold text-[#2c3259]">{c.full_name}</div><div className="text-xs text-slate-400">{c.email}</div></button>))}</div></div>
                     </div>
+                </div>
+            )}
+
+            {activeTab === 'logs' && (
+                <div className="bg-slate-900 text-green-400 p-4 rounded-xl font-mono text-xs h-[500px] overflow-y-auto">
+                    <div className="flex justify-between border-b border-slate-700 pb-2 mb-2">
+                        <span className="font-bold text-white">System Logs</span>
+                        <button onClick={fetchLogs} className="text-blue-400 hover:underline">Refresh</button>
+                    </div>
+                    {sysLogs.length === 0 ? <div className="text-slate-500 italic">No logs found.</div> : sysLogs.map(l => (
+                        <div key={l.id} className="mb-1 border-b border-slate-800 pb-1 last:border-0">
+                            <span className="text-slate-500 mr-2">[{new Date(l.created_at).toLocaleTimeString()}]</span>
+                            <span className={`uppercase font-bold mr-2 ${l.level==='error'?'text-red-500':(l.level==='success'?'text-green-500':'text-blue-400')}`}>{l.level}</span>
+                            <span>{l.message}</span>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>
