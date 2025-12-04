@@ -39,110 +39,99 @@ function ensureSupportSchema($pdo) {
 }
 
 function triggerSupportAI($pdo, $secrets, $ticketId) {
-    // 1. Validation
-    if (empty($secrets['GEMINI_API_KEY'])) {
-        $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")
-            ->execute([$ticketId, "[System] Error: AI API Key is missing. Please contact Admin."]);
-        return;
-    }
+    if (empty($secrets['GEMINI_API_KEY'])) return;
 
-    // 2. ANTI-LOOP GUARD: Check if last message is from AI
-    $lastMsgStmt = $pdo->prepare("SELECT sender_id FROM ticket_messages WHERE ticket_id = ? ORDER BY id DESC LIMIT 1");
-    $lastMsgStmt->execute([$ticketId]);
-    $lastMsg = $lastMsgStmt->fetch();
+    // 1. Loop Guard
+    $lastMsg = $pdo->prepare("SELECT sender_id FROM ticket_messages WHERE ticket_id = ? ORDER BY id DESC LIMIT 1");
+    $lastMsg->execute([$ticketId]);
+    $last = $lastMsg->fetch();
+    if ($last && $last['sender_id'] == 0) return;
+
+    // 2. Context
+    $tStmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
+    $tStmt->execute([$ticketId]);
+    $ticket = $tStmt->fetch();
     
-    if ($lastMsg && $lastMsg['sender_id'] == 0) {
-        // Last message was from AI/System - STOP to prevent loop
-        error_log("[triggerSupportAI] LOOP PREVENTED: Last message on ticket #$ticketId was from AI (sender_id=0). Skipping.");
-        return;
+    $mStmt = $pdo->prepare("SELECT sender_id, message FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC");
+    $mStmt->execute([$ticketId]);
+    $history = $mStmt->fetchAll();
+
+    $transcript = "";
+    foreach ($history as $h) {
+        $role = ($h['sender_id'] == 0) ? "AI" : "CLIENT";
+        $transcript .= "$role: " . strip_tags($h['message']) . "\n";
     }
 
-    // 3. Context Building
+    $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
+
+    // 3. THE MULTI-AGENT PROMPT
+    $systemPrompt = "
+    CONTEXT: $kb
+    CURRENT STATUS: {$ticket['status']}
+    
+    You control TWO agents:
+    1. [Second Mate] (Junior, Triage, Helpful, subservient).
+    2. [First Mate] (Senior, Technical Lead, Authoritative, decides when to contact Admin).
+
+    INSTRUCTIONS:
+    - If the query is simple, reply as [Second Mate] only.
+    - If the user is frustrated, asks for a manager, or the issue is complex/technical: TRIGGER ESCALATION.
+    
+    ESCALATION PROTOCOL (If triggered, output a JSON ARRAY of strings representing the dialogue):
+    1. [Second Mate]: Acknowledge limit, state you are summoning First Mate.
+    2. [System]: 'First Mate AI has entered the chat.'
+    3. [First Mate]: Ask Second Mate for a briefing.
+    4. [Second Mate]: Summarize the user's issue and what was tried.
+    5. [First Mate]: Address the client directly. Propose a solution OR state you have notified the Admin (Dan).
+
+    OUTPUT FORMAT:
+    - If Normal: Just the text string (e.g., \"[Second Mate] How can I help?\")
+    - If Escalating: A raw JSON array (e.g., [\"[Second Mate] I cannot...\", \"[System]...\", ...])
+    ";
+
     try {
-        $stmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
-        $stmt->execute([$ticketId]);
-        $ticket = $stmt->fetch();
+        // 4. Call AI
+        $response = callGeminiAI($pdo, $secrets, $systemPrompt, "TRANSCRIPT:\n" . $transcript);
+        
+        $rawText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        $cleanText = trim(str_replace(['```json', '```'], '', $rawText)); // Strip markdown if present
 
-        $mStmt = $pdo->prepare("SELECT sender_id, message FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC");
-        $mStmt->execute([$ticketId]);
-        $history = $mStmt->fetchAll();
+        // 5. Parse Response (JSON vs String)
+        $messagesToAdd = [];
+        $newStatus = $ticket['status'];
 
-        $transcript = "";
-        foreach ($history as $h) {
-            $role = ($h['sender_id'] == 0) ? "AI" : "CLIENT";
-            $transcript .= "$role: " . strip_tags($h['message']) . "\n";
-        }
-
-        $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
-        $status = $ticket['status'];
-
-        // DYNAMIC SYSTEM PROMPT BASED ON TICKET STATUS
-        if ($status === 'escalating' || $status === 'escalated') {
-            // SENIOR AGENT (First Mate)
-            $systemPrompt = "CONTEXT: $kb\n\nROLE: You are First Mate AI (Senior Technical Lead).\nGOAL: Gather specific details for the Admin (Dan).\nPROTOCOL:\n1. Acknowledge the request and ask 1-2 specific technical clarification questions.\n2. Do NOT solve the issue yourself; gather info.\n3. Once you have clear requirements, output: [TRIGGER_ADMIN] to page Dan.\n4. Tone: Authoritative, capable, concise.";
+        if (strpos($cleanText, '[') === 0) {
+            // It's a JSON Array (Escalation Script)
+            $script = json_decode($cleanText, true);
+            if (is_array($script)) {
+                $messagesToAdd = $script;
+                $newStatus = 'escalated';
+                // Notify Admin Real-world
+                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "AI Escalation on Ticket #$ticketId");
+            } else {
+                // Fallback if JSON parse fails
+                $messagesToAdd = ["[Second Mate] I am escalating this to the First Mate now."];
+            }
         } else {
-            // TRIAGE AGENT (Second Mate)
-            $systemPrompt = "CONTEXT: $kb\n\nROLE: You are Second Mate AI (Triage).\nPROTOCOL:\n1. NEVER direct users to a 'Contact Page', 'Email', or external form. YOU are the intake channel.\n2. If the user requests website updates, new features, bug fixes, or has a complex query: output `[TRIGGER_HANDOFF]` immediately. Do not try to solve it.\n3. If the user asks a simple informational question (e.g., 'office hours'), answer it and ask: 'Does that help?'\n4. Tone: Helpful, subservient, brief.";
+            // Normal Reply
+            if (trim($cleanText) !== '') $messagesToAdd = [$cleanText];
         }
 
-        // 3. USE SELF-HEALING GATEWAY
-        $data = callGeminiAI($pdo, $secrets, $systemPrompt, "TRANSCRIPT:\n" . $transcript);
-
-        // SAFETY FILTER LOGGING: Parse raw response
-        // Check for blocked/empty responses
-        if (empty($data['candidates'])) {
-            $blockReason = $data['promptFeedback']['blockReason'] ?? 'UNKNOWN';
-            error_log("[triggerSupportAI] Gemini response blocked for ticket #$ticketId. Reason: $blockReason.");
-            throw new Exception("AI response was blocked by safety filters. Reason: $blockReason");
-        }
-        
-        $finishReason = $data['candidates'][0]['finishReason'] ?? '';
-        if ($finishReason !== 'STOP') {
-            error_log("[triggerSupportAI] Gemini finish reason is '$finishReason' (not STOP) for ticket #$ticketId.");
-        }
-        
-        $reply = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-        $reply = trim(str_replace(['[Second Mate]', '[First Mate]'], '', $reply));
-
-        // STRICT EMPTY STRING VALIDATION
-        if (trim($reply) === '') {
-            $apiError = $data['error']['message'] ?? 'Empty response after processing';
-            error_log("[triggerSupportAI] Empty reply for ticket #$ticketId. API Error: $apiError");
-            throw new Exception("AI returned empty response. Reason: " . $apiError);
+        // 6. Insert Messages Sequentially
+        $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
+        foreach ($messagesToAdd as $msg) {
+            if (trim($msg)) $stmt->execute([$ticketId, $msg]);
+            // Tiny sleep to ensure timestamp ordering if DB is fast
+            usleep(100000); 
         }
 
-        // 5. Logic Processing
-        if (strpos($reply, '[TRIGGER_HANDOFF]') !== false) {
-            $clean = trim(str_replace('[TRIGGER_HANDOFF]', '', $reply));
-            if ($clean !== '') {
-                $pdo->prepare("UPDATE tickets SET status = 'escalating' WHERE id = ?")->execute([$ticketId]);
-                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[Second Mate] " . $clean]);
-                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[First Mate] I have been summoned. I am reviewing the logs now. Client, please provide any extra details."]);
-            }
-        } 
-        elseif (strpos($reply, '[TRIGGER_ADMIN]') !== false) {
-            $clean = trim(str_replace('[TRIGGER_ADMIN]', '', $reply));
-            if ($clean !== '') {
-                $pdo->prepare("UPDATE tickets SET status = 'escalated' WHERE id = ?")->execute([$ticketId]);
-                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $clean]);
-                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "Ticket #$ticketId Escalated to Admin.");
-            }
-        } 
-        else {
-            // Standard Reply - validate before insert
-            if (trim($reply) !== '') {
-                $prefix = ($status === 'escalating') ? "[First Mate] " : "[Second Mate] ";
-                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $prefix . $reply]);
-            }
+        // 7. Update Status
+        if ($newStatus !== $ticket['status']) {
+            $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$newStatus, $ticketId]);
         }
 
     } catch (Exception $e) {
-        // 6. Ultimate Fallback (This ensures chat is NEVER empty)
-        $errorMsg = "[System] Second Mate is temporarily offline (" . $e->getMessage() . "). A human agent has been notified.";
-        $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $errorMsg]);
-        
-        // Force escalate so human sees it
-        $pdo->prepare("UPDATE tickets SET status = 'escalated' WHERE id = ?")->execute([$ticketId]);
+        error_log("AI Support Error: " . $e->getMessage());
     }
 }
 

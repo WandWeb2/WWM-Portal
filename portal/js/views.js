@@ -1592,36 +1592,66 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                 {messages.map(m => {
                     const isSystem = m.sender_id == 0;
                     const isInternalMsg = m.is_internal == 1;
-                    let bubbleColor = 'bg-slate-100 text-slate-600 text-center w-full text-xs';
-                    if (isInternalMsg) bubbleColor = 'bg-yellow-100 border-yellow-200 text-yellow-900';
-                    else if (isSystem) {
-                        if (m.persona === 'second') bubbleColor = 'bg-teal-50 border-teal-200 text-teal-800';
-                        else if (m.persona === 'first') bubbleColor = 'bg-indigo-50 border-indigo-200 text-indigo-800';
-                        else bubbleColor = 'bg-slate-100 text-slate-600 text-center w-full text-xs';
+                    let bubbleColor = 'bg-slate-100 text-slate-600';
+                    
+                    // PARSE PERSONA TAGS
+                    const text = m.message || '';
+                    let displayMessage = text;
+                    let personaLabel = null;
+
+                    if (isInternalMsg) {
+                        bubbleColor = 'bg-yellow-100 border-yellow-200 text-yellow-900';
+                        personaLabel = 'Internal Note';
+                    } else if (isSystem) {
+                        if (text.includes('[First Mate]')) {
+                            bubbleColor = 'bg-indigo-100 border-indigo-200 text-indigo-900';
+                            displayMessage = text.replace('[First Mate]', '').trim();
+                            personaLabel = 'First Mate (Senior AI)';
+                        } else if (text.includes('[Second Mate]')) {
+                            bubbleColor = 'bg-teal-50 border-teal-200 text-teal-800';
+                            displayMessage = text.replace('[Second Mate]', '').trim();
+                            personaLabel = 'Second Mate';
+                        } else if (text.includes('[System]')) {
+                            bubbleColor = 'bg-slate-200 text-slate-600 text-xs font-bold text-center py-1';
+                            displayMessage = text.replace('[System]', '').trim();
+                            personaLabel = null; // System messages are self-labeling
+                        }
                     } else {
-                        bubbleColor = (m.role === 'admin' ? 'bg-[#2493a2] text-white' : 'bg-orange-500 text-white');
+                        bubbleColor = (m.role === 'admin' ? 'bg-[#2c3259] text-white' : 'bg-[#2493a2] text-white');
                     }
-                    const align = isSystem ? 'justify-center' : (m.role === role ? 'justify-end' : 'justify-start');
+                    
+                    const align = isSystem ? 'justify-start' : (m.role === role ? 'justify-end' : 'justify-start');
+                    
+                    // Special render for centered system events
+                    if (isSystem && text.includes('[System]')) {
+                        return (
+                            <div key={m.id} className="flex justify-center my-2">
+                                <span className="bg-slate-100 text-slate-500 text-[10px] uppercase font-bold px-3 py-1 rounded-full border">{displayMessage}</span>
+                            </div>
+                        );
+                    }
 
                     return (
                         <div key={m.id} className={`flex ${align}`}>
-                            <div className={`max-w-[80%] p-3 rounded-lg text-sm shadow-sm ${bubbleColor}`}>
-                                {isInternalMsg && <div className="text-[10px] font-bold uppercase mb-1 opacity-50">Internal Note</div>}
+                            <div className={`max-w-[85%] p-3 rounded-xl text-sm shadow-sm relative ${bubbleColor}`}>
+                                {personaLabel && <div className="text-[9px] font-bold uppercase opacity-70 mb-1 tracking-wider">{personaLabel}</div>}
                                 {m.typing ? (
-                                    <span>{m.message}<span className="inline-block w-3 h-4 bg-slate-200 animate-pulse align-text-bottom"/></span>
+                                    <span className="flex gap-1 items-center">
+                                        Typing <span className="w-1 h-1 bg-current rounded-full animate-bounce"/><span className="w-1 h-1 bg-current rounded-full animate-bounce delay-100"/><span className="w-1 h-1 bg-current rounded-full animate-bounce delay-200"/>
+                                    </span>
                                 ) : (
-                                    <span className="whitespace-pre-wrap block">{window.formatTextWithLinks(m.message)}</span>
+                                    <span className="whitespace-pre-wrap block leading-relaxed">{window.formatTextWithLinks(displayMessage)}</span>
                                 )}
-                                <div className="text-[10px] mt-1 opacity-60 text-right">{new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                                <div className="text-[9px] mt-2 opacity-50 text-right">{new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                             </div>
                         </div>
                     );
                 })}
                 {isThinking && (
                     <div className="flex justify-start animate-pulse">
-                        <div className="bg-teal-50 border border-teal-100 text-teal-800 p-3 rounded-lg text-xs flex items-center gap-2">
-                            <window.Icons.Sparkles size={12}/> 
-                            {messages.length === 0 ? "Second Mate is analyzing your request..." : "Second Mate is typing..."}
+                        <div className="bg-teal-50/50 border border-teal-100 text-teal-600 p-2 rounded-lg text-xs flex items-center gap-2">
+                            <window.Icons.Sparkles size={12} className="animate-spin"/> 
+                            <span className="font-medium">Second Mate is thinking...</span>
                         </div>
                     </div>
                 )}
