@@ -260,12 +260,21 @@ function notifyAllAdmins($pdo, $message) {
     
     foreach ($admins as $admin) {
         // Internal Notification
-        $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)")->execute([$admin['id'], $message]);
+        $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)") ->execute([$admin['id'], $message]);
         
         // Email Notification
         $subject = "Escalation Alert: WandWeb Portal";
         $headers = "From: noreply@wandweb.co";
         @mail($admin['email'], $subject, $message, $headers);
+    }
+}
+
+function notifyAllAdminsForProject($pdo, $projectId, $message) {
+    // Notify all admins about project activity
+    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
+    $admins = $stmt->fetchAll();
+    foreach ($admins as $admin) {
+        createNotification($pdo, $admin['id'], $message, 'project', $projectId);
     }
 }
 ?>

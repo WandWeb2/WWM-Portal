@@ -28,7 +28,7 @@ const arrayMove = (arr, from, to) => {
     return res;
 };
 
-const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus }) => {
+const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus, onAssignManager, partners }) => {
     const Icons = window.Icons;
     const isAdmin = role === 'admin';
     const isManager = role === 'admin' || role === 'partner';
@@ -48,6 +48,7 @@ const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus
                 <div>
                     <h4 className="font-bold text-slate-800">{project.title}</h4>
                     <p className="text-xs text-slate-500">{isManager ? (project.client_name || 'Unassigned') : 'Active Project'}</p>
+                    {project.manager_name && <p className="text-xs text-[#2493a2] font-semibold mt-1">👤 Manager: {project.manager_name}</p>}
                 </div>
                 
                 {/* TOP RIGHT ACTIONS (Admin Only) */}
@@ -56,6 +57,9 @@ const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus
                     
                     {isAdmin && (
                         <>
+                            <button onClick={(e)=>{e.stopPropagation(); onAssignManager(project)}} className="text-slate-300 hover:text-teal-600 p-1.5 rounded-md hover:bg-teal-50 transition-colors" title="Assign Manager">
+                                <Icons.Users size={16}/>
+                            </button>
                             <button onClick={(e)=>{e.stopPropagation(); onUpdateStatus(project.id, 'archived')}} className="text-slate-300 hover:text-blue-600 p-1.5 rounded-md hover:bg-blue-50 transition-colors" title="Archive">
                                 <Icons.Archive size={16}/>
                             </button>
@@ -89,7 +93,7 @@ const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus
     );
 };
 
-const TaskManager = ({ project, token, onClose }) => {
+const TaskManager = ({ project, token, role, onClose }) => {
     const Icons = window.Icons;
     const [details, setDetails] = React.useState({ tasks: [], comments: [] });
     const [msg, setMsg] = React.useState("");
@@ -100,6 +104,8 @@ const TaskManager = ({ project, token, onClose }) => {
         if (r.status === 'success') setDetails(r);
     };
     React.useEffect(() => { load(); }, [project.id]);
+
+    const isManager = role === 'admin' || role === 'partner';
 
     const addTask = async () => { if (!newTask.trim()) return; await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'save_task', token, project_id: project.id, title: newTask }) }); setNewTask(""); load(); };
     
@@ -123,42 +129,51 @@ const TaskManager = ({ project, token, onClose }) => {
 
     return (
         <div className="fixed inset-0 bg-[#2c3259]/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[85vh] flex overflow-hidden">
-                <div className="flex-1 flex flex-col">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[85vh] flex overflow-hidden">
+                <div className="flex-1 flex flex-col border-r border-slate-200">
                     <div className="p-6 border-b flex justify-between items-center">
                         <div><h2 className="text-xl font-bold text-[#2c3259]">{project.title}</h2></div>
                         <button onClick={onClose}><Icons.Close/></button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-                        <div>
-                            <h3 className="font-bold text-slate-800 mb-4">Tasks</h3>
+                    <div className="flex-1 overflow-y-auto p-6">
+                        <h3 className="font-bold text-slate-800 mb-4">Tasks</h3>
+                        {isManager && (
                             <div className="flex gap-2 mb-4"><input className="flex-1 p-3 border rounded-lg text-sm" placeholder="New Task..." value={newTask} onChange={e=>setNewTask(e.target.value)} /><button onClick={addTask} className="bg-[#2c3259] text-white px-4 rounded-lg"><Icons.Plus/></button></div>
-                            <div className="space-y-2">
-                                {(details.tasks || []).map(task => {
-                                    const isChecked = Number(task.is_complete) === 1;
-                                    return (
-                                        <div key={task.id} className={`p-4 border rounded-xl flex items-center gap-3 group transition-colors ${isChecked ? 'bg-slate-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                        )}
+                        <div className="space-y-2">
+                            {(details.tasks || []).map(task => {
+                                const isChecked = Number(task.is_complete) === 1;
+                                return (
+                                    <div key={task.id} className={`p-4 border rounded-xl flex items-center gap-3 group transition-colors ${isChecked ? 'bg-slate-50' : 'border-slate-200 hover:border-blue-300'}`}>
+                                        {isManager && (
                                             <button 
                                                 onClick={() => toggleTask(task.id, isChecked)} 
                                                 className={`w-6 h-6 rounded-sm border flex items-center justify-center transition-colors flex-shrink-0 ${isChecked ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300'}`}
                                             >
                                                 {isChecked ? <Icons.Check size={14}/> : null} 
                                             </button>
-                                            <span className={`flex-1 ${isChecked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{task.title}</span>
+                                        )}
+                                        {!isManager && (
+                                            <div className={`w-6 h-6 rounded-sm border flex items-center justify-center flex-shrink-0 ${isChecked ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300'}`}>
+                                                {isChecked ? <Icons.Check size={14}/> : null} 
+                                            </div>
+                                        )}
+                                        <span className={`flex-1 ${isChecked ? 'line-through text-slate-400' : 'text-slate-700'}`}>{task.title}</span>
+                                        {isManager && (
                                             <button onClick={() => deleteTask(task.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <Icons.Trash size={14}/>
                                             </button>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                        <div className="border-t pt-6">
-                            <h3 className="font-bold text-slate-800 mb-4">Project Chat</h3>
-                            <div className="flex-1 overflow-y-auto space-y-3 mb-4 max-h-64">{comments.map(c => <div key={c.id} className="bg-slate-50 p-3 rounded-lg border text-sm"><p className="font-bold text-xs text-[#2c3259] mb-1">{c.author || c.full_name}</p><div className="text-slate-700 whitespace-pre-wrap">{window.formatTextWithLinks(c.message)}</div></div>)}</div>
-                            <form onSubmit={sendComment} className="flex gap-2"><input className="flex-1 p-2 border rounded text-sm" value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Send project message..."/><button className="bg-[#dba000] text-white p-2 rounded"><Icons.Send/></button></form>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
+                </div>
+                <div className="w-96 flex flex-col bg-slate-50">
+                    <div className="p-4 border-b"><h3 className="font-bold text-slate-800">Project Chat</h3></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">{comments.map(c => <div key={c.id} className="bg-white p-3 rounded-lg shadow-sm border text-sm"><p className="font-bold text-xs text-[#2c3259] mb-1">{c.author || c.full_name}</p><div className="whitespace-pre-wrap">{window.formatTextWithLinks(c.message)}</div></div>)}</div>
+                    <form onSubmit={sendComment} className="p-4 border-t flex gap-2"><input className="flex-1 p-2 border rounded text-sm" value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Send project message..."/><button className="bg-[#dba000] text-white p-2 rounded"><Icons.Send/></button></form>
                 </div>
             </div>
         </div>
@@ -669,16 +684,22 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
     const Icons = window.Icons;
     const [projects, setProjects] = React.useState([]); 
     const [clients, setClients] = React.useState([]); // Store clients for selector
+    const [partners, setPartners] = React.useState([]); // Store partners for manager assignment
     const [active, setActive] = React.useState(null);
     const [showCreateModal, setShowCreateModal] = React.useState(false);
+    const [showAssignManagerModal, setShowAssignManagerModal] = React.useState(false);
+    const [selectedProjectForManager, setSelectedProjectForManager] = React.useState(null);
+    const [selectedManager, setSelectedManager] = React.useState('');
     const [showArchived, setShowArchived] = React.useState(false);
     const [initialProjectData, setInitialProjectData] = React.useState(null);
     
-    // Fetch Projects AND Clients
+    // Fetch Projects, Clients, AND Partners
     const loadData = () => {
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }).then(r => setProjects(r.projects||[]));
         if (role === 'admin') {
             window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) }).then(r => setClients(r.clients||[]));
+            // Fetch partners for manager assignment
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_partners', token }) }).then(r => setPartners(r.partners||[])).catch(() => setPartners([]));
         }
     };
     
@@ -731,9 +752,26 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
         loadData();
     };
 
+    const handleAssignManagerClick = (project) => {
+        setSelectedProjectForManager(project);
+        setSelectedManager(project.manager_id || '');
+        setShowAssignManagerModal(true);
+    };
+
+    const handleAssignManager = async () => {
+        if (!selectedProjectForManager) return;
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_project_manager', token, project_id: selectedProjectForManager.id, manager_id: selectedManager }) });
+        if(res.status === 'success') {
+            setShowAssignManagerModal(false);
+            loadData();
+        } else {
+            alert('Error: ' + res.message);
+        }
+    };
+
     const filteredProjects = projects.filter(p => showArchived ? p.status === 'archived' : p.status !== 'archived');
     
-    if(active) return <TaskManager project={active} token={token} onClose={()=>setActive(null)} />;
+    if(active) return <TaskManager project={active} token={token} role={role} onClose={()=>setActive(null)} />;
     
     return (
         <div className="space-y-6 animate-fade-in">
@@ -759,7 +797,7 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {filteredProjects.map(p=>
-                        <ProjectCard key={p.id} project={p} role={role} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} />
+                        <ProjectCard key={p.id} project={p} role={role} setActiveProject={setActive} onDelete={handleDelete} onUpdateStatus={handleUpdateStatus} onAssignManager={handleAssignManagerClick} partners={partners} />
                     )}
                 </div>
             )}
@@ -771,6 +809,31 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
                     onSubmit={handleCreateProject}
                     initialData={initialProjectData}
                 />
+            )}
+
+            {showAssignManagerModal && selectedProjectForManager && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
+                        <div className="p-6 border-b flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Assign Project Manager</h3>
+                            <button onClick={() => setShowAssignManagerModal(false)}><Icons.Close/></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <p className="font-bold text-slate-800 mb-2">Project: {selectedProjectForManager.title}</p>
+                                <label className="block text-sm font-bold text-slate-600 mb-2">Select Manager</label>
+                                <select value={selectedManager} onChange={(e) => setSelectedManager(e.target.value)} className="w-full p-3 border rounded-lg">
+                                    <option value="">No Manager</option>
+                                    {partners.map(p => <option key={p.id} value={p.id}>{p.full_name || p.email}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="p-6 border-t flex gap-3 justify-end">
+                            <button onClick={() => setShowAssignManagerModal(false)} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-50 rounded">Cancel</button>
+                            <button onClick={handleAssignManager} className="px-4 py-2 bg-[#2493a2] text-white font-bold rounded hover:bg-[#1e7e8b]">Assign Manager</button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

@@ -139,7 +139,7 @@ function handleUpdateProjectStatus($pdo, $i) {
     $status = strip_tags($i['status'] ?? '');
     $health = (int)($i['health_score'] ?? 0);
 
-    $stmt = $pdo->prepare("SELECT user_id, title FROM projects WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT user_id, title, manager_id FROM projects WHERE id = ?");
     $stmt->execute([$pid]);
     $project = $stmt->fetch();
     if (!$project) sendJson('error', 'Project not found');
@@ -152,10 +152,42 @@ function handleUpdateProjectStatus($pdo, $i) {
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
         ->execute([$pid, $u['uid'], $msg]);
 
-    // Deep-linking notification to project owner
+    // Notify: Client + Manager + Admin
     createNotification($pdo, $project['user_id'], "Project '" . $project['title'] . "' updated to " . strtoupper($status) . " by $actorName", 'project', $pid);
+    if (!empty($project['manager_id'])) {
+        createNotification($pdo, $project['manager_id'], "Project '" . $project['title'] . "' updated to " . strtoupper($status) . " by $actorName", 'project', $pid);
+    }
+    notifyAllAdminsForProject($pdo, $pid, "Project '" . $project['title'] . "' updated to " . strtoupper($status));
 
     sendJson('success', 'Updated');
+}
+
+function handleAssignProjectManager($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureProjectSchema($pdo);
+
+    $pid = (int)($i['project_id'] ?? 0);
+    $mid = (int)($i['manager_id'] ?? 0);
+
+    $stmt = $pdo->prepare("SELECT title, manager_id FROM projects WHERE id = ?");
+    $stmt->execute([$pid]);
+    $project = $stmt->fetch();
+    if (!$project) sendJson('error', 'Project not found');
+
+    $pdo->prepare("UPDATE projects SET manager_id = ? WHERE id = ?")->execute([$mid, $pid]);
+
+    // Notify manager of assignment
+    if ($mid > 0) {
+        $m = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+        $m->execute([$mid]);
+        $manager = $m->fetch();
+        if ($manager) {
+            createNotification($pdo, $mid, "You have been assigned as manager for project '" . $project['title'] . "'", 'project', $pid);
+        }
+    }
+
+    sendJson('success', 'Manager Assigned');
 }
 
 function handleDeleteProject($pdo, $i) {
@@ -199,13 +231,19 @@ function handleSaveTask($pdo, $i) {
     $pdo->prepare("INSERT INTO tasks (project_id, title) VALUES (?, ?)")->execute([$pid, $title]);
     recalcProjectHealth($pdo, $pid);
 
-    $p = $pdo->prepare("SELECT title, user_id FROM projects WHERE id = ?");
+    $p = $pdo->prepare("SELECT title, user_id, manager_id FROM projects WHERE id = ?");
     $p->execute([$pid]);
     $proj = $p->fetch();
     $msg = "New task added: $title";
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
         ->execute([$pid, $u['uid'], $msg]);
-    if ($proj) createNotification($pdo, $proj['user_id'], "New Task in '" . $proj['title'] . "': $title", 'project', $pid);
+    if ($proj) {
+        createNotification($pdo, $proj['user_id'], "New Task in '" . $proj['title'] . "': $title", 'project', $pid);
+        if (!empty($proj['manager_id'])) {
+            createNotification($pdo, $proj['manager_id'], "New Task in '" . $proj['title'] . "': $title", 'project', $pid);
+        }
+        notifyAllAdminsForProject($pdo, $pid, "New Task in '" . $proj['title'] . "': $title");
+    }
 
     sendJson('success', 'Saved');
 }
@@ -226,6 +264,19 @@ function handleToggleTask($pdo, $i) {
         $status = $done ? 'Completed' : 'Re-opened';
         $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
             ->execute([$pid, $u['uid'], "Task '" . $row['title'] . "' marked as $status"]);
+        
+        // Notify client, manager, and admins of task completion
+        $p = $pdo->prepare("SELECT user_id, manager_id FROM projects WHERE id = ?");
+        $p->execute([$pid]);
+        $proj = $p->fetch();
+        if ($proj) {
+            $notifMsg = "Task '" . $row['title'] . "' marked as $status";
+            createNotification($pdo, $proj['user_id'], $notifMsg, 'project', $pid);
+            if (!empty($proj['manager_id'])) {
+                createNotification($pdo, $proj['manager_id'], $notifMsg, 'project', $pid);
+            }
+            notifyAllAdminsForProject($pdo, $pid, $notifMsg);
+        }
     }
 
     sendJson('success', 'Updated');
@@ -258,17 +309,29 @@ function handlePostComment($pdo, $i) {
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, ?, ?)")
         ->execute([$pid, $u['uid'], $message, ($i['target_type'] ?? 'project'), (int)($i['target_id'] ?? 0)]);
 
-    $stmt = $pdo->prepare("SELECT user_id, title FROM projects WHERE id = ?");
+    $stmt = $pdo->prepare("SELECT user_id, title, manager_id FROM projects WHERE id = ?");
     $stmt->execute([$pid]);
     $project = $stmt->fetch();
 
     $actorName = $u['name'] ?? $u['full_name'] ?? 'Someone';
+    $commentPreview = $actorName . " commented on '" . ($project['title'] ?? '') . "': " . substr($message, 0, 50) . "...";
+    
     if ($u['role'] === 'client') {
         notifyPartnerIfAssigned($pdo, $u['uid'], "Client $actorName commented on '" . ($project['title'] ?? '') . "'");
-    } else {
-        if (!empty($project['user_id']) && $project['user_id'] != $u['uid']) {
-            createNotification($pdo, $project['user_id'], $actorName . " commented on '" . ($project['title'] ?? '') . "': " . substr($message, 0, 50) . "...", 'project', $pid);
+        // Also notify manager and admin
+        if (!empty($project['manager_id'])) {
+            createNotification($pdo, $project['manager_id'], $commentPreview, 'project', $pid);
         }
+        notifyAllAdminsForProject($pdo, $pid, $commentPreview);
+    } else {
+        // Staff/manager commenting: notify client, other managers, admins
+        if (!empty($project['user_id']) && $project['user_id'] != $u['uid']) {
+            createNotification($pdo, $project['user_id'], $commentPreview, 'project', $pid);
+        }
+        if (!empty($project['manager_id']) && $project['manager_id'] != $u['uid']) {
+            createNotification($pdo, $project['manager_id'], $commentPreview, 'project', $pid);
+        }
+        notifyAllAdminsForProject($pdo, $pid, $commentPreview);
     }
 
     sendJson('success', 'Posted');
