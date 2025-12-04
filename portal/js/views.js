@@ -758,6 +758,19 @@ window.FilesView = ({ token, role }) => {
     
     const handleUpload = async (e) => { e.preventDefault(); const f = new FormData(e.target); f.append('action', 'upload_file'); f.append('token', token); await fetch(API_URL, { method: 'POST', body: f }).then(r=>r.json()).then(d=>{ if(d.status==='success') { setShow(false); fetchData(); } else alert(d.message); }); };
     
+    // Helper: Format Bytes to KB/MB
+    const formatBytes = (bytes, decimals = 0) => {
+        if (!+bytes) return '0 Bytes';
+        // If it's already a string like "40 KB", just return it
+        if (isNaN(bytes)) return bytes;
+        
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+    };
+    
     if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>; 
     
     return (
@@ -777,6 +790,10 @@ window.FilesView = ({ token, role }) => {
                     <tbody>
                         {files.map(f => {
                             const ext = f.filename.includes('.') ? f.filename.split('.').pop().toUpperCase() : 'FILE';
+                            // Ensure URL is absolute if it's a relative path
+                            const rawUrl = f.external_url || f.url || '#';
+                            const safeUrl = rawUrl.startsWith('/') ? window.location.origin + rawUrl : rawUrl;
+
                             return (
                                 <tr key={f.id} className="border-b hover:bg-slate-50 transition-colors">
                                     <td className="p-4 font-bold flex gap-3 items-center text-[#2c3259]">
@@ -785,9 +802,9 @@ window.FilesView = ({ token, role }) => {
                                     </td>
                                     {isAdmin && <td className="p-4 text-slate-600">{f.client_name}</td>}
                                     <td className="p-4 text-xs font-bold text-slate-400 bg-slate-100/50 rounded">{f.file_type==='link' ? 'LINK' : ext}</td>
-                                    <td className="p-4 text-xs font-mono text-slate-500">{f.file_type==='link' ? '-' : f.filesize}</td>
+                                    <td className="p-4 text-xs font-mono text-slate-500">{f.file_type==='link' ? '-' : formatBytes(f.filesize)}</td>
                                     <td className="p-4 text-right">
-                                        <a href={f.url || f.external_url} target="_blank" className="text-blue-600 hover:text-blue-800 font-bold text-xs border border-blue-200 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 transition-colors">Open</a>
+                                        <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 font-bold text-xs border border-blue-200 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 transition-colors">Open</a>
                                     </td>
                                 </tr>
                             );
@@ -795,7 +812,7 @@ window.FilesView = ({ token, role }) => {
                     </tbody>
                 </table>
             </div>
-            {show && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"><div className="bg-white p-8 rounded-xl w-full max-w-md relative shadow-2xl"><button onClick={()=>setShow(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><Icons.Close/></button><h3 className="font-bold text-xl mb-4 text-[#2c3259]">Upload File</h3><form onSubmit={handleUpload} className="space-y-4"><input type="file" name="file" className="w-full text-xs file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#2c3259] file:text-white hover:file:bg-[#363d6e] file:cursor-pointer" required /><button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow hover:bg-[#363d6e] transition-colors">Upload Now</button></form></div></div>}
+            {show && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"><div className="bg-white p-8 rounded-xl w-full max-w-md relative shadow-2xl"><button onClick={()=>setShow(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><Icons.Close/></button><h3 className="font-bold text-xl mb-4 text-[#2c3259]">Upload File</h3><form onSubmit={handleUpload} className="space-y-4"><input type="file" name="file" className="w-full p-2 border rounded text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-[#2c3259] file:text-white hover:file:bg-[#363d6e]" required /><button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow hover:bg-[#363d6e] transition-colors">Upload Now</button></form></div></div>}
         </div>
     );
 };

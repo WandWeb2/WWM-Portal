@@ -383,7 +383,11 @@ function handleUploadFile($pdo, $i) {
     $stmt->execute([$clientId, $u['uid'], $filename, $url, $fileType, $fileSize, $pid]);
     
     // Add comment to project with clickable URL
-    $actorName = $u['name'] ?? $u['full_name'] ?? 'Someone';
+    // Fetch real uploader name
+    $nameStmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+    $nameStmt->execute([$u['uid']]);
+    $uploaderData = $nameStmt->fetch();
+    $actorName = $uploaderData ? $uploaderData['full_name'] : 'Unknown User';
     $fullLink = (strpos($url, 'http') === 0) ? $url : 'https://' . $_SERVER['HTTP_HOST'] . $url;
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
         ->execute([$pid, $u['uid'], "📎 $actorName uploaded: $filename\n$fullLink"]);
@@ -453,7 +457,11 @@ function handleUploadProjectFile($pdo, $i) {
     $stmt->execute([$clientId, $u['uid'], $filename, $relativeUrl, $fileType, $fileSize, $pid]);
     
     // Add comment to project with clickable URL
-    $actorName = $u['name'] ?? $u['full_name'] ?? 'Someone';
+    // Fetch real uploader name
+    $nameStmt = $pdo->prepare("SELECT full_name FROM users WHERE id = ?");
+    $nameStmt->execute([$u['uid']]);
+    $uploaderData = $nameStmt->fetch();
+    $actorName = $uploaderData ? $uploaderData['full_name'] : 'Unknown User';
     $fullLink = 'https://' . $_SERVER['HTTP_HOST'] . $relativeUrl;
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
         ->execute([$pid, $u['uid'], "📎 $actorName uploaded: $filename\n$fullLink"]);
