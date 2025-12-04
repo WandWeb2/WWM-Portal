@@ -41,28 +41,37 @@ function ensureSupportSchema($pdo) {
 function triggerSupportAI($pdo, $secrets, $ticketId) {
     if (empty($secrets['GEMINI_API_KEY'])) return;
 
-    // 1. Loop Guard
+    // 1. Loop Guard: Stop if the last message was from AI
     $lastMsg = $pdo->prepare("SELECT sender_id FROM ticket_messages WHERE ticket_id = ? ORDER BY id DESC LIMIT 1");
     $lastMsg->execute([$ticketId]);
     $last = $lastMsg->fetch();
     if ($last && $last['sender_id'] == 0) return;
 
-    // 2. Context & Client Dossier
+    // 2. Fetch Ticket & Client Context
     $tStmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
     $tStmt->execute([$ticketId]);
     $ticket = $tStmt->fetch();
     
-    // Fetch Client Profile
     $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
     $uStmt->execute([$ticket['user_id']]);
     $client = $uStmt->fetch();
 
-    // Fetch Recent Invoice Context (if any)
-    $iStmt = $pdo->prepare("SELECT number, amount, status FROM invoices WHERE customer_email = ? ORDER BY created_at DESC LIMIT 1");
-    $iStmt->execute([$client['email']]);
-    $lastInv = $iStmt->fetch();
-    $billingContext = $lastInv ? "Last Invoice: #{$lastInv['number']} (\${$lastInv['amount']} - {$lastInv['status']})" : "No recent invoice data.";
+    // 3. Fetch Billing Context via Stripe API (Fixes SQL Error)
+    $billingContext = "No billing data linked.";
+    if (!empty($client['stripe_id']) && function_exists('stripeRequest')) {
+        try {
+            $invRes = stripeRequest($secrets, 'GET', "invoices?customer={$client['stripe_id']}&limit=1");
+            if (!empty($invRes['data'][0])) {
+                $inv = $invRes['data'][0];
+                $amt = number_format($inv['total'] / 100, 2);
+                $billingContext = "Last Invoice: #{$inv['number']} (\${$amt} - {$inv['status']})";
+            }
+        } catch (Exception $e) {
+            $billingContext = "Billing system unavailable.";
+        }
+    }
 
+    // 4. Build Transcript
     $mStmt = $pdo->prepare("SELECT sender_id, message FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC");
     $mStmt->execute([$ticketId]);
     $history = $mStmt->fetchAll();
@@ -75,44 +84,44 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
 
     $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
 
-    // 3. THE GOD-MODE PROMPT
+    // 5. The "God Mode" System Prompt
     $systemPrompt = "
     CONTEXT: $kb
     
-    CLIENT DOSSIER (YOU SEE THIS, DO NOT ASK FOR IT):
+    CLIENT DOSSIER (Internal Use Only):
     - Name: {$client['full_name']}
     - Business: {$client['business_name']}
     - Email: {$client['email']}
     - Phone: {$client['phone']}
-    - Billing Status: $billingContext
-    - Ticket Priority: {$ticket['priority']}
+    - Billing: $billingContext
+    - Ticket Status: {$ticket['status']}
     
     PERSONAS:
-    1. [Second Mate] (Tier 1): Friendly, helpful. Answers general questions using the Knowledge Base.
-    2. [First Mate] (Tier 2 Admin): Authoritative, capable. Can see specific client data (Invoices, Projects). 
+    1. [Second Mate] (Tier 1 Support): Friendly, helpful. Answers general questions (WordPress, login, basic how-to).
+    2. [First Mate] (Tier 2 Admin): Authoritative, capable. Handles billing, bugs, and complex requests.
 
     PROTOCOL:
-    1. NEVER ask for the client's name, email, or phone. You have the Dossier.
-    2. NEVER direct the client to a 'Contact Form'. You ARE the support channel.
-    3. If [Second Mate] cannot solve it (e.g., complex billing, technical bug, or user wants a human):
-       - Triggers the [First Mate].
-    4. [First Mate] should try to solve it. If [First Mate] cannot solve it, they must say: \"I have paged the Human Administration team to look at this immediately.\"
+    1. Do NOT ask for client details (Name/Email/Phone) - you already have them in the Dossier.
+    2. Do NOT direct users to external contact forms. You ARE the support channel.
+    3. If the user's request is simple, [Second Mate] answers it directly.
+    4. If the user asks for a human, has a billing issue, or a complex technical request -> ESCALATE to [First Mate].
 
     OUTPUT FORMATS:
-    
-    SCENARIO A: Second Mate answers.
-    Output string: \"[Second Mate] Answer...\"
-    
-    SCENARIO B: Escalation to First Mate.
-    Output JSON Array (Strict JSON):
+
+    SCENARIO A: Simple Reply
+    Output string: \"[Second Mate] Your answer here...\"
+
+    SCENARIO B: Escalation Required
+    Output a RAW JSON ARRAY of exactly 3 strings:
     [
-      \"[Second Mate] I don't have access to that specific invoice data. I am summoning the First Mate.\",
+      \"[Second Mate] I see you need higher-level assistance. I am summoning the First Mate.\",
       \"[System] First Mate AI has entered the chat.\",
-      \"[First Mate] Hello {$client['full_name']}. I see your profile and your last invoice ({$lastInv['number']}). [Provide Answer or escalate to Human].\"
+      \"[First Mate] Hello {$client['full_name']}. I have reviewed your file. [Provide specific answer or confirm you are checking the server].\"
     ]
     ";
 
     try {
+        // 6. Call AI
         $response = callGeminiAI($pdo, $secrets, $systemPrompt, "TRANSCRIPT:\n" . $transcript);
         
         $rawText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
@@ -121,27 +130,32 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         $messagesToAdd = [];
         $newStatus = $ticket['status'];
 
-        // Parsing
+        // 7. Robust JSON Extraction (Fixes "First Mate never arrives")
         preg_match('/\[.*\]/s', $cleanText, $matches);
+        
         if (!empty($matches[0])) {
+            // JSON Found -> It is an escalation script
             $script = json_decode($matches[0], true);
             if (is_array($script)) {
                 $messagesToAdd = $script;
                 $newStatus = 'escalated';
-                // Actual Admin Notification
-                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Summoned for Ticket #$ticketId");
+                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Summoned on Ticket #$ticketId");
             }
-        } 
+        }
         
-        if (empty($messagesToAdd) && trim($cleanText) !== '') $messagesToAdd = [$cleanText];
+        // Fallback: If not JSON, treat as simple text
+        if (empty($messagesToAdd) && trim($cleanText) !== '') {
+            $messagesToAdd = [$cleanText];
+        }
 
-        // Insert
+        // 8. Insert Messages
         $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
         foreach ($messagesToAdd as $msg) {
             if (trim($msg)) $stmt->execute([$ticketId, $msg]);
-            usleep(200000); // Slight DB offset
+            usleep(250000); // 0.25s DB spacing to ensure correct ordering
         }
 
+        // 9. Update Status if changed
         if ($newStatus !== $ticket['status']) {
             $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$newStatus, $ticketId]);
         }
