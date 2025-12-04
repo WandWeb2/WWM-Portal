@@ -942,15 +942,25 @@ window.SupportView = ({ token, role }) => {
 
     // Deep Link Handler
     React.useEffect(() => {
-        if (tickets.length === 0) return; 
-        const pending = localStorage.getItem('pending_nav');
-        if(pending) {
-            const nav = JSON.parse(pending);
-            if(nav.view === 'support' && nav.target_id) {
-                const target = tickets.find(t => t.id == nav.target_id);
-                if(target) { setActiveTicket(target); localStorage.removeItem('pending_nav'); }
+        const handleDeepLink = () => {
+            if (tickets.length === 0) return;
+            const pending = localStorage.getItem('pending_nav');
+            if(pending) {
+                const nav = JSON.parse(pending);
+                if(nav.view === 'support' && nav.target_id) {
+                    const target = tickets.find(t => t.id == nav.target_id);
+                    if(target) { 
+                        setActiveTicket(target); 
+                        localStorage.removeItem('pending_nav'); 
+                    }
+                }
             }
-        }
+        };
+        // Run on mount/update
+        handleDeepLink();
+        // Listen for global view switches
+        window.addEventListener('switch_view', handleDeepLink);
+        return () => window.removeEventListener('switch_view', handleDeepLink);
     }, [tickets]);
 
     if (loading) return <div className="p-8 text-center"><Icons.Loader/></div>;
@@ -1009,22 +1019,32 @@ window.SupportView = ({ token, role }) => {
 };
 
 // NEW SUB-COMPONENT: Create Project Modal with AI & Client Search
-const CreateProjectModal = ({ clients, onClose, onSubmit, initialData }) => {
+window.CreateProjectModal = ({ clients = [], onClose, onSubmit, initialData, token, role }) => {
     const Icons = window.Icons;
     const [mode, setMode] = React.useState(initialData?.notes ? 'ai' : 'manual'); // 'manual' or 'ai'
     const [selectedClient, setSelectedClient] = React.useState(null);
     const [searchTerm, setSearchTerm] = React.useState("");
     const [isSearching, setIsSearching] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
+    const [clientList, setClientList] = React.useState(clients || []);
+    const isAdmin = role === 'admin';
 
     React.useEffect(() => {
-        if (initialData?.client_id && clients?.length) {
-            const pre = clients.find(c => c.id == initialData.client_id);
+        if (initialData?.client_id && clientList?.length) {
+            const pre = clientList.find(c => c.id == initialData.client_id);
             if (pre) { setSelectedClient(pre); setSearchTerm(pre.full_name); }
         }
-    }, [initialData, clients]);
+    }, [initialData, clientList]);
 
-    const filteredClients = clients.filter(c => 
+    // Fetch clients internally if not provided and user is admin
+    React.useEffect(() => {
+        if (isAdmin && (!clientList || clientList.length === 0) && token) {
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
+                .then(res => { if (res.status === 'success') setClientList(res.clients || []); });
+        }
+    }, [isAdmin, token]);
+
+    const filteredClients = clientList.filter(c => 
         (c.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
         (c.business_name || '').toLowerCase().includes(searchTerm.toLowerCase())
     ).slice(0, 5);

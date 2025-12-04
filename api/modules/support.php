@@ -65,29 +65,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     // Status 'open' = Second Mate. Status 'escalating' = First Mate. Status 'escalated' = Admin.
     $status = $ticket['status'];
     
-    $systemPrompt = "
-CONTEXT:
-$kb
-
-RULES:
-1. You are an AI Support Agent for WandWeb.
-2. USE ONLY the CONTEXT provided. Do not invent clients, projects (like Land Watch), or stats.
-3. If you don't know, ask the user or escalate.
-
-CURRENT PHASE: $status
-
-SCENARIO A (Status: 'open'): You are SECOND MATE.
-- Try to fix the issue using the KB.
-- If you cannot fix it, or the user is frustrated, reply: \"I see this is something we can't fix alone. Let me call in the First Mate.\" AND append tag: [TRIGGER_HANDOFF]
-
-SCENARIO B (Status: 'escalating'): You are FIRST MATE.
-- You have just been called in. Talk to BOTH Second Mate and the Client.
-- Try to resolve.
-- If you still fail, say: \"I am escalating this to the Administration team immediately.\" AND append tag: [TRIGGER_ADMIN]
-
-OUTPUT:
-Just the message text. No prefixes like 'Second Mate:'.
-";
+    $systemPrompt = "CONTEXT: $kb\nCURRENT PHASE: $status\n\nCRITICAL INSTRUCTION: DO NOT use prefixes like '[Second Mate]' or '[First Mate]'. Just output the reply text.\n\nLOGIC:\n1. If the user asks for 'Dan', 'Human', 'Admin', or wants to 'Pay'/'Hire', output: [TRIGGER_ADMIN]\n2. If Phase is 'open' (Second Mate) and you cannot solve it, output: [TRIGGER_HANDOFF]\n3. If Phase is 'escalating' (First Mate) and you cannot solve it, output: [TRIGGER_ADMIN]";
 
     // 5. Call Gemini
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . $secrets['GEMINI_API_KEY'];
@@ -102,7 +80,7 @@ Just the message text. No prefixes like 'Second Mate:'.
     curl_close($ch);
     
     $reply = $res['candidates'][0]['content']['parts'][0]['text'] ?? '';
-    $reply = trim($reply);
+    $reply = trim(str_replace(['[Second Mate]', '[First Mate]'], '', $reply));
     if (empty($reply)) return;
 
     // 6. Process Logic Tags
@@ -251,6 +229,16 @@ function handleReplyTicket($pdo, $i, $s) {
     if ($u['role'] === 'client') {
         triggerSupportAI($pdo, $s, $tid);
         notifyPartnerIfAssigned($pdo, $u['uid'], "Client replied to #$tid");
+    }
+    
+    // If Admin/Partner replied, notify the Client
+    if ($u['role'] === 'admin' || $u['role'] === 'partner') {
+        $stmt = $pdo->prepare("SELECT user_id FROM tickets WHERE id = ?");
+        $stmt->execute([$tid]);
+        $ticket = $stmt->fetch();
+        if ($ticket) {
+            createNotification($pdo, $ticket['user_id'], "New reply on Ticket #$tid", 'ticket', $tid);
+        }
     }
     
     sendJson('success', 'Reply Sent'); 

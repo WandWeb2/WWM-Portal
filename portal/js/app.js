@@ -104,6 +104,7 @@ const App = () => {
     const [view, setView] = React.useState('dashboard');
     const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
     const [inviteToken, setInviteToken] = React.useState(null);
+    const [projectModalData, setProjectModalData] = React.useState(null);
 
     React.useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -122,7 +123,15 @@ const App = () => {
             if(e.detail) setView(e.detail);
         };
         window.addEventListener('switch_view', switchHandler);
+        const handleModal = (e) => setProjectModalData(e.detail);
+        window.addEventListener('open_project_modal', handleModal);
         return () => window.removeEventListener('switch_view', switchHandler);
+    }, []);
+
+    React.useEffect(() => {
+        const handleModal = (e) => setProjectModalData(e.detail);
+        window.addEventListener('open_project_modal', handleModal);
+        return () => window.removeEventListener('open_project_modal', handleModal);
     }, []);
 
     // --- ROUTING ---
@@ -170,6 +179,25 @@ const App = () => {
                 {view === 'settings' && <SettingsView token={session.token} role={session.role} />}
                 {view === 'support' && <SupportView token={session.token} role={session.role} />}
              </main>
+             {projectModalData && (
+                 <window.CreateProjectModal 
+                     clients={[]} 
+                     initialData={projectModalData} 
+                     token={session.token}
+                     role={session.role}
+                     onClose={() => setProjectModalData(null)} 
+                     onSubmit={async (data) => {
+                         const res = await window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ token: session.token, ...data }) });
+                         if(res.status === 'success') { 
+                             alert("Project Created!"); 
+                             setProjectModalData(null); 
+                             window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' }));
+                         } else {
+                             alert(res.message);
+                         }
+                     }}
+                 />
+             )}
              {PortalNotice ? <PortalNotice /> : null}
              {PortalBackground ? <PortalBackground /> : null}
         </div>
