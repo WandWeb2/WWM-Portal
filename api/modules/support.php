@@ -257,7 +257,7 @@ function handleReplyTicket($pdo, $i, $s) {
     // 4. Trigger AI / Notifications
     if ($u['role'] === 'client') {
         triggerSupportAI($pdo, $s, $tid);
-        notifyPartnerIfAssigned($pdo, $u['uid'], "Client replied to #$tid");
+        notifyPartnerIfAssigned($pdo, $u['uid'], "{$u['name']} replied to Ticket #$tid");
     }
     
     if ($u['role'] === 'admin' || $u['role'] === 'partner') {
@@ -265,7 +265,7 @@ function handleReplyTicket($pdo, $i, $s) {
         $stmt->execute([$tid]);
         $ticket = $stmt->fetch();
         if ($ticket) {
-            createNotification($pdo, $ticket['user_id'], "New reply on Ticket #$tid", 'ticket', $tid);
+            createNotification($pdo, $ticket['user_id'], "{$u['name']} replied to Ticket #$tid", 'ticket', $tid);
         }
     }
     
