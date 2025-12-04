@@ -760,7 +760,7 @@ window.FilesView = ({ token, role }) => {
     
     // Helper: Format Bytes to KB/MB
     const formatBytes = (bytes, decimals = 0) => {
-        if (!+bytes) return '0 Bytes';
+        if (!bytes) return '0 Bytes';
         // If it's already a string like "40 KB", just return it
         if (isNaN(bytes)) return bytes;
         
@@ -770,10 +770,8 @@ window.FilesView = ({ token, role }) => {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
     };
-    
-    if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>; 
-    
-    return (
+
+    if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>;    return (
         <div className="space-y-6 animate-fade-in">
             <div className="text-right"><button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-sm shadow hover:bg-[#363d6e]">Add File</button></div>
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -790,8 +788,9 @@ window.FilesView = ({ token, role }) => {
                     <tbody>
                         {files.map(f => {
                             const ext = f.filename.includes('.') ? f.filename.split('.').pop().toUpperCase() : 'FILE';
-                            // Ensure URL is absolute if it's a relative path
-                            const rawUrl = f.external_url || f.url || '#';
+                            // FIX: Use external_url from DB, fallback to url (if legacy), fallback to #. 
+                            // Ensure URL is absolute if it's a relative path starting with /
+                            const rawUrl = f.external_url || f.url || f.filepath || '#';
                             const safeUrl = rawUrl.startsWith('/') ? window.location.origin + rawUrl : rawUrl;
 
                             return (
