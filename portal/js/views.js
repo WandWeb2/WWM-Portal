@@ -101,6 +101,8 @@ const TaskManager = ({ project, token, role, onClose }) => {
     const [fileUrl, setFileUrl] = React.useState("");
     const [fileName, setFileName] = React.useState("");
     const [showFileUpload, setShowFileUpload] = React.useState(false);
+    const [uploadMode, setUploadMode] = React.useState('cloud'); // 'cloud' or 'file'
+    const [selectedFile, setSelectedFile] = React.useState(null);
 
     const load = async () => {
         const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_project_details', token, project_id: project.id }) });
@@ -130,15 +132,48 @@ const TaskManager = ({ project, token, role, onClose }) => {
     
     const handleFileUpload = async (e) => {
         e.preventDefault();
-        if (!fileUrl.trim() || !fileName.trim()) return;
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_file', token, project_id: project.id, external_url: fileUrl, filename: fileName, file_type: 'external', filesize: '0' }) });
-        if (res.status === 'success') {
-            setFileUrl("");
-            setFileName("");
-            setShowFileUpload(false);
-            load();
+        
+        if (uploadMode === 'cloud') {
+            // Cloud link upload
+            if (!fileUrl.trim() || !fileName.trim()) return;
+            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'upload_file', token, project_id: project.id, external_url: fileUrl, filename: fileName, file_type: 'external', filesize: '0' }) });
+            if (res.status === 'success') {
+                setFileUrl("");
+                setFileName("");
+                setShowFileUpload(false);
+                setSelectedFile(null);
+                load();
+            } else {
+                alert('Upload failed: ' + res.message);
+            }
         } else {
-            alert('Upload failed: ' + res.message);
+            // Actual file upload
+            if (!selectedFile) return;
+            
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('action', 'upload_project_file');
+            formData.append('token', token);
+            formData.append('project_id', project.id);
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+                const res = await response.json();
+                
+                if (res.status === 'success') {
+                    setFileName("");
+                    setShowFileUpload(false);
+                    setSelectedFile(null);
+                    load();
+                } else {
+                    alert('Upload failed: ' + res.message);
+                }
+            } catch (error) {
+                alert('Upload failed: Network error');
+            }
         }
     };
     
@@ -196,12 +231,48 @@ const TaskManager = ({ project, token, role, onClose }) => {
                     </div>
                     {showFileUpload && (
                         <div className="p-4 border-b bg-white">
+                            <div className="flex gap-2 mb-3">
+                                <button 
+                                    type="button" 
+                                    onClick={() => setUploadMode('cloud')} 
+                                    className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${uploadMode === 'cloud' ? 'bg-[#2493a2] text-white' : 'bg-slate-100 text-slate-600'}`}
+                                >
+                                    <Icons.Link size={14} className="inline mr-1"/> Cloud Link
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setUploadMode('file')} 
+                                    className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${uploadMode === 'file' ? 'bg-[#2493a2] text-white' : 'bg-slate-100 text-slate-600'}`}
+                                >
+                                    <Icons.Upload size={14} className="inline mr-1"/> Upload File
+                                </button>
+                            </div>
                             <form onSubmit={handleFileUpload} className="space-y-2">
-                                <input className="w-full p-2 border rounded text-xs" placeholder="File name" value={fileName} onChange={e=>setFileName(e.target.value)} required/>
-                                <input className="w-full p-2 border rounded text-xs" placeholder="File URL (e.g., Google Drive link)" value={fileUrl} onChange={e=>setFileUrl(e.target.value)} required/>
+                                {uploadMode === 'cloud' ? (
+                                    <>
+                                        <input className="w-full p-2 border rounded text-xs" placeholder="File name" value={fileName} onChange={e=>setFileName(e.target.value)} required/>
+                                        <input className="w-full p-2 border rounded text-xs" placeholder="File URL (e.g., Google Drive, Dropbox)" value={fileUrl} onChange={e=>setFileUrl(e.target.value)} required/>
+                                    </>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <input 
+                                            type="file" 
+                                            onChange={(e) => setSelectedFile(e.target.files[0])} 
+                                            className="w-full text-xs file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#2493a2] file:text-white hover:file:bg-[#1d7a87] file:cursor-pointer"
+                                            required
+                                        />
+                                        {selectedFile && (
+                                            <div className="text-xs text-slate-600 p-2 bg-slate-50 rounded">
+                                                Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="flex gap-2">
-                                    <button type="submit" className="flex-1 bg-[#2493a2] text-white p-2 rounded text-xs font-bold">Upload</button>
-                                    <button type="button" onClick={() => setShowFileUpload(false)} className="px-3 py-2 text-slate-600 text-xs">Cancel</button>
+                                    <button type="submit" className="flex-1 bg-[#2493a2] text-white p-2 rounded text-xs font-bold">
+                                        {uploadMode === 'cloud' ? 'Add Link' : 'Upload File'}
+                                    </button>
+                                    <button type="button" onClick={() => { setShowFileUpload(false); setSelectedFile(null); }} className="px-3 py-2 text-slate-600 text-xs">Cancel</button>
                                 </div>
                             </form>
                         </div>

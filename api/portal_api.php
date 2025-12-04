@@ -49,6 +49,12 @@ try {
 
     $pdo = getDBConnection($secrets);
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
+    
+    // Handle both JSON and FormData (for file uploads)
+    if (empty($input)) {
+        $input = $_POST;
+    }
+    
     $action = $input['action'] ?? $_POST['action'] ?? '';
 
     // Ensure settings schema exists
@@ -88,6 +94,7 @@ try {
         case 'post_comment': handlePostComment($pdo, $input); break;
         case 'get_files': handleGetFiles($pdo, $input); break;
         case 'upload_file': handleUploadFile($pdo, $input); break;
+        case 'upload_project_file': handleUploadProjectFile($pdo, $input); break;
 
         // Billing
         case 'get_billing_overview': handleGetBilling($pdo, $input, $secrets); break;
