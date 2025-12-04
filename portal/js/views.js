@@ -603,17 +603,20 @@ window.SettingsView = ({ token, role }) => {
     const handleForceFix = async (userId, role, status) => {
         const btn = document.activeElement;
         const originalText = btn.innerText;
-        btn.innerText = "..."; btn.disabled = true;
+        btn.innerText = "...";
+        btn.disabled = true;
 
+        // Call the safer backend
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'fix_user_account', token, target_user_id: userId, role, status }) });
         
         if (res.status === 'success') { 
-            alert("Success! Account recovered.");
-            // Force reload to ensure all lists and caches are 100% fresh
+            alert("Account recovered successfully. Reloading to apply changes...");
+            // Force hard reload to ensure all lists (Partners/Clients) are rebuilt from scratch
             window.location.reload(); 
         } else {
             alert("Error: " + (res.message || 'Action failed'));
-            btn.innerText = originalText; btn.disabled = false;
+            btn.innerText = originalText;
+            btn.disabled = false;
         }
     };
 

@@ -1,6 +1,6 @@
 <?php
 // /api/modules/clients.php
-// Version: 32.1 - Fixed AI & Recovery Tools
+// Version: 32.1 - Partner Portal, Audit Tools & Resilient Sync
 
 // [HELPER] Sync local user data to Stripe & CRM
 function syncClientToExternal($pdo, $uid, $secrets) {
@@ -30,8 +30,8 @@ function syncClientToExternal($pdo, $uid, $secrets) {
             ]);
         }
     } catch (Exception $e) {
-        // Silently fail sync to prevent crashing the main operation
-        error_log("Sync Error: " . $e->getMessage());
+        // Silently log sync error but DO NOT crash the application
+        error_log("External Sync Error for User $uid: " . $e->getMessage());
     }
 }
 
@@ -52,11 +52,11 @@ function handleFixUserAccount($pdo, $i, $s) {
     $role = strtolower(trim($i['role'])); 
     $status = $i['status'];
     
-    // 1. Execute DB Update
+    // Execute DB Update
     try {
         $pdo->prepare("UPDATE users SET role = ?, status = ? WHERE id = ?")->execute([$role, $status, $uid]);
         
-        // 2. Attempt Sync (Safe Mode)
+        // Attempt Sync (Safe Mode - Errors caught inside function)
         syncClientToExternal($pdo, $uid, $s);
         
         sendJson('success', 'Account Repaired');
