@@ -382,10 +382,11 @@ function handleUploadFile($pdo, $i) {
     $stmt = $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([$clientId, $u['uid'], $filename, $url, $fileType, $fileSize, $pid]);
     
-    // Add comment to project
+    // Add comment to project with clickable URL
     $actorName = $u['name'] ?? $u['full_name'] ?? 'Someone';
+    $fullLink = (strpos($url, 'http') === 0) ? $url : 'https://' . $_SERVER['HTTP_HOST'] . $url;
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
-        ->execute([$pid, $u['uid'], "📎 $actorName uploaded: $filename"]);
+        ->execute([$pid, $u['uid'], "📎 $actorName uploaded: $filename\n$fullLink"]);
     
     // Notify
     if ($proj) {
@@ -451,10 +452,11 @@ function handleUploadProjectFile($pdo, $i) {
     $stmt = $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->execute([$clientId, $u['uid'], $filename, $relativeUrl, $fileType, $fileSize, $pid]);
     
-    // Add comment to project
+    // Add comment to project with clickable URL
     $actorName = $u['name'] ?? $u['full_name'] ?? 'Someone';
+    $fullLink = 'https://' . $_SERVER['HTTP_HOST'] . $relativeUrl;
     $pdo->prepare("INSERT INTO comments (project_id, user_id, message, target_type, target_id) VALUES (?, ?, ?, 'project', 0)")
-        ->execute([$pid, $u['uid'], "📎 $actorName uploaded: $filename"]);
+        ->execute([$pid, $u['uid'], "📎 $actorName uploaded: $filename\n$fullLink"]);
     
     // Notify
     if ($proj) {

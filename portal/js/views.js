@@ -355,6 +355,7 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
     const [details, setDetails] = React.useState(null);
     const [loading, setLoading] = React.useState(true);
     const [allClients, setAllClients] = React.useState([]); // For assignment dropdown
+    const [assignId, setAssignId] = React.useState(""); // For managed clients assignment
 
     React.useEffect(() => {
         setLoading(true);
@@ -451,13 +452,23 @@ window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
                                 This user is a <strong>Partner</strong>. They can view projects and tickets for the clients listed below.
                             </div>
                             <div className="mb-6 flex gap-2">
-                                <select id="assign_client_select" className="flex-1 p-2 border rounded">
+                                <select 
+                                    value={assignId} 
+                                    onChange={(e) => setAssignId(e.target.value)} 
+                                    className="flex-1 p-2 border rounded"
+                                >
                                     <option value="">Select a client to assign...</option>
                                     {allClients.filter(ac => ac.id !== c.id && !managed.find(m => m.id === ac.id)).map(ac => (
                                         <option key={ac.id} value={ac.id}>{ac.full_name} ({ac.business_name})</option>
                                     ))}
                                 </select>
-                                <button onClick={() => handleAssign(document.getElementById('assign_client_select').value)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold">Assign</button>
+                                <button 
+                                    onClick={() => { handleAssign(assignId); setAssignId(""); }} 
+                                    disabled={!assignId}
+                                    className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold disabled:opacity-50"
+                                >
+                                    Assign
+                                </button>
                             </div>
                             <div className="bg-white border rounded overflow-hidden">
                                 {managed.length === 0 ? <div className="p-6 text-center text-slate-400">No clients assigned yet.</div> : (
@@ -737,14 +748,56 @@ window.SettingsView = ({ token, role }) => {
 
 window.FilesView = ({ token, role }) => { 
     const Icons = window.Icons;
-    const [files, setFiles] = React.useState([]); const [loading, setLoading] = React.useState(true); const [show, setShow] = React.useState(false); const isAdmin = role === 'admin'; 
+    const [files, setFiles] = React.useState([]); 
+    const [loading, setLoading] = React.useState(true); 
+    const [show, setShow] = React.useState(false); 
+    const isAdmin = role === 'admin'; 
+    
     const fetchData = () => { window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_files', token }) }).then(res => { if(res && res.status==='success') setFiles(res.files||[]); }).finally(()=>setLoading(false)); };
     React.useEffect(() => { fetchData(); }, [token]); 
+    
     const handleUpload = async (e) => { e.preventDefault(); const f = new FormData(e.target); f.append('action', 'upload_file'); f.append('token', token); await fetch(API_URL, { method: 'POST', body: f }).then(r=>r.json()).then(d=>{ if(d.status==='success') { setShow(false); fetchData(); } else alert(d.message); }); };
+    
     if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>; 
-    return (<div className="space-y-6"><div className="text-right"><button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded">Add File</button></div><div className="bg-white rounded border overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Name</th>{isAdmin && <th className="p-3">Client</th>}<th className="p-3">Type</th><th className="p-3 text-right">Link</th></tr></thead><tbody>{files.map(f=><tr key={f.id} className="border-b hover:bg-slate-50"><td className="p-3 font-bold flex gap-2 items-center">{f.file_type==='link'?<Icons.Cloud className="text-blue-500"/>:<Icons.File className="text-orange-500"/>}{f.filename}</td>{isAdmin && <td className="p-3">{f.client_name}</td>}<td className="p-3 text-xs font-mono">{f.file_type==='link'?'LINK':f.filesize}</td><td className="p-3 text-right"><a href={f.url} target="_blank" className="text-blue-600 hover:underline">Open</a></td></tr>)}</tbody></table></div>
-    {show && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>setShow(false)} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">Upload File</h3><form onSubmit={handleUpload} className="space-y-4"><input type="file" name="file" className="w-full p-2 border rounded" required /><button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">Upload</button></form></div></div>}
-    </div>); 
+    
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="text-right"><button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-sm shadow hover:bg-[#363d6e]">Add File</button></div>
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-50 border-b text-slate-500 uppercase text-xs">
+                        <tr>
+                            <th className="p-4">Name</th>
+                            {isAdmin && <th className="p-4">Client</th>}
+                            <th className="p-4">Type</th>
+                            <th className="p-4">Size</th>
+                            <th className="p-4 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {files.map(f => {
+                            const ext = f.filename.includes('.') ? f.filename.split('.').pop().toUpperCase() : 'FILE';
+                            return (
+                                <tr key={f.id} className="border-b hover:bg-slate-50 transition-colors">
+                                    <td className="p-4 font-bold flex gap-3 items-center text-[#2c3259]">
+                                        {f.file_type==='link' ? <Icons.Cloud className="text-blue-400" size={18}/> : <Icons.File className="text-orange-400" size={18}/>}
+                                        {f.filename}
+                                    </td>
+                                    {isAdmin && <td className="p-4 text-slate-600">{f.client_name}</td>}
+                                    <td className="p-4 text-xs font-bold text-slate-400 bg-slate-100/50 rounded">{f.file_type==='link' ? 'LINK' : ext}</td>
+                                    <td className="p-4 text-xs font-mono text-slate-500">{f.file_type==='link' ? '-' : f.filesize}</td>
+                                    <td className="p-4 text-right">
+                                        <a href={f.url || f.external_url} target="_blank" className="text-blue-600 hover:text-blue-800 font-bold text-xs border border-blue-200 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100 transition-colors">Open</a>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+            {show && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"><div className="bg-white p-8 rounded-xl w-full max-w-md relative shadow-2xl"><button onClick={()=>setShow(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><Icons.Close/></button><h3 className="font-bold text-xl mb-4 text-[#2c3259]">Upload File</h3><form onSubmit={handleUpload} className="space-y-4"><input type="file" name="file" className="w-full text-xs file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#2c3259] file:text-white hover:file:bg-[#363d6e] file:cursor-pointer" required /><button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow hover:bg-[#363d6e] transition-colors">Upload Now</button></form></div></div>}
+        </div>
+    );
 };
 
 window.ServicesView = ({ token, role }) => {
