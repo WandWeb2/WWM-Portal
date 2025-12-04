@@ -47,11 +47,22 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     $last = $lastMsg->fetch();
     if ($last && $last['sender_id'] == 0) return;
 
-    // 2. Context
+    // 2. Context & Client Dossier
     $tStmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
     $tStmt->execute([$ticketId]);
     $ticket = $tStmt->fetch();
     
+    // Fetch Client Profile
+    $uStmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+    $uStmt->execute([$ticket['user_id']]);
+    $client = $uStmt->fetch();
+
+    // Fetch Recent Invoice Context (if any)
+    $iStmt = $pdo->prepare("SELECT number, amount, status FROM invoices WHERE customer_email = ? ORDER BY created_at DESC LIMIT 1");
+    $iStmt->execute([$client['email']]);
+    $lastInv = $iStmt->fetch();
+    $billingContext = $lastInv ? "Last Invoice: #{$lastInv['number']} (\${$lastInv['amount']} - {$lastInv['status']})" : "No recent invoice data.";
+
     $mStmt = $pdo->prepare("SELECT sender_id, message FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC");
     $mStmt->execute([$ticketId]);
     $history = $mStmt->fetchAll();
@@ -64,79 +75,73 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
 
     $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
 
-    // 3. THE MULTI-AGENT PROMPT
+    // 3. THE GOD-MODE PROMPT
     $systemPrompt = "
     CONTEXT: $kb
-    CURRENT STATUS: {$ticket['status']}
     
-    You are the 'WandWeb Crew'. You control two personas:
+    CLIENT DOSSIER (YOU SEE THIS, DO NOT ASK FOR IT):
+    - Name: {$client['full_name']}
+    - Business: {$client['business_name']}
+    - Email: {$client['email']}
+    - Phone: {$client['phone']}
+    - Billing Status: $billingContext
+    - Ticket Priority: {$ticket['priority']}
     
-    1. [Second Mate] (Tier 1 Support): Friendly, capable. Tries to answer general questions (WordPress, login, basic how-to) using the Context.
-    2. [First Mate] (Tier 2 Technical Lead): Authoritative, concise. Handles bug reports, server errors, or billing disputes.
+    PERSONAS:
+    1. [Second Mate] (Tier 1): Friendly, helpful. Answers general questions using the Knowledge Base.
+    2. [First Mate] (Tier 2 Admin): Authoritative, capable. Can see specific client data (Invoices, Projects). 
 
     PROTOCOL:
-    - Analyze the Client's last message.
-    - If [Second Mate] can answer it using general knowledge or the Context, DO IT. Do not escalate unnecessary things.
-    - ONLY ESCALATE IF: The user explicitly asks for a manager/human, OR the request requires database/server access you don't have.
-    
+    1. NEVER ask for the client's name, email, or phone. You have the Dossier.
+    2. NEVER direct the client to a 'Contact Form'. You ARE the support channel.
+    3. If [Second Mate] cannot solve it (e.g., complex billing, technical bug, or user wants a human):
+       - Triggers the [First Mate].
+    4. [First Mate] should try to solve it. If [First Mate] cannot solve it, they must say: \"I have paged the Human Administration team to look at this immediately.\"
+
     OUTPUT FORMATS:
     
-    SCENARIO A: Normal Reply (Second Mate handles it)
-    Output a single string: \"[Second Mate] Your answer here...\"
+    SCENARIO A: Second Mate answers.
+    Output string: \"[Second Mate] Answer...\"
     
-    SCENARIO B: Escalation Required (Handoff to First Mate)
-    Output a RAW JSON ARRAY of exactly 3 strings:
+    SCENARIO B: Escalation to First Mate.
+    Output JSON Array (Strict JSON):
     [
-      \"[Second Mate] I cannot access that specific system directly. I am summoning the First Mate to assist.\",
+      \"[Second Mate] I don't have access to that specific invoice data. I am summoning the First Mate.\",
       \"[System] First Mate AI has entered the chat.\",
-      \"[First Mate] I am here. I have reviewed the request. [Provide the solution or ask a specific technical question].\"
+      \"[First Mate] Hello {$client['full_name']}. I see your profile and your last invoice ({$lastInv['number']}). [Provide Answer or escalate to Human].\"
     ]
-    
-    IMPORTANT:
-    - If escalating, the 3rd message MUST address the client directly and move the conversation forward.
-    - Do not output markdown code blocks. Just the String or the JSON.
     ";
 
     try {
-        // 4. Call AI
         $response = callGeminiAI($pdo, $secrets, $systemPrompt, "TRANSCRIPT:\n" . $transcript);
         
         $rawText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
-        // Clean markdown
         $cleanText = trim(str_replace(['```json', '```'], '', $rawText));
 
         $messagesToAdd = [];
         $newStatus = $ticket['status'];
 
-        // 5. Robust JSON Parsing via Regex
-        // Look for content between [ and ] including newlines
+        // Parsing
         preg_match('/\[.*\]/s', $cleanText, $matches);
-        
         if (!empty($matches[0])) {
-            // Valid JSON Array found -> Escalation Script
             $script = json_decode($matches[0], true);
             if (is_array($script)) {
                 $messagesToAdd = $script;
                 $newStatus = 'escalated';
-                // Notify Admin Real-world
-                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "AI Escalation on Ticket #$ticketId");
+                // Actual Admin Notification
+                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Summoned for Ticket #$ticketId");
             }
         } 
         
-        // Fallback: If no JSON found, treat as standard text reply
-        if (empty($messagesToAdd) && trim($cleanText) !== '') {
-            $messagesToAdd = [$cleanText];
-        }
+        if (empty($messagesToAdd) && trim($cleanText) !== '') $messagesToAdd = [$cleanText];
 
-        // 6. Insert Messages Sequentially
+        // Insert
         $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
         foreach ($messagesToAdd as $msg) {
             if (trim($msg)) $stmt->execute([$ticketId, $msg]);
-            // Tiny sleep to ensure timestamp ordering
-            usleep(100000); 
+            usleep(200000); // Slight DB offset
         }
 
-        // 7. Update Status
         if ($newStatus !== $ticket['status']) {
             $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$newStatus, $ticketId]);
         }

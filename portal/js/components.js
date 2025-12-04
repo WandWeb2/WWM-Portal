@@ -70,7 +70,6 @@ window.simulateTyping = (messages, defaultDelay = 50, callback) => {
     window.dispatchEvent(new CustomEvent('new_ai_msg', { detail: messages[0] }));
     
     const typeNextChar = () => {
-        // Safety check
         if (msgIndex >= messages.length) {
             if (typeof callback === 'function') callback();
             return;
@@ -79,31 +78,27 @@ window.simulateTyping = (messages, defaultDelay = 50, callback) => {
         const currentMsg = messages[msgIndex];
         const fullText = currentMsg.message || '';
 
-        // Typing logic
+        // Typing...
         if (charIndex < fullText.length) {
             const partial = fullText.substring(0, charIndex + 1);
             window.dispatchEvent(new CustomEvent('new_ai_char', { detail: { id: currentMsg.id, text: partial } }));
             charIndex++;
             setTimeout(typeNextChar, defaultDelay);
         } else {
-            // Message Complete - Move to next
+            // Message Finished. Prepare for next.
             msgIndex++;
             charIndex = 0;
 
             if (msgIndex < messages.length) {
                 const nextMsg = messages[msgIndex];
+                const nextText = nextMsg.message || '';
                 
                 // THEATRICAL PAUSE LOGIC
-                // If previous was Second Mate/System and next is First Mate, wait longer (3s)
-                // Otherwise, standard pause (0.8s)
+                // If the NEXT message is the System announcement or First Mate speaking, wait 3 seconds.
                 let pauseDuration = 800; 
                 
-                const prevText = currentMsg.message || '';
-                if (
-                    (prevText.includes('[Second Mate]') || prevText.includes('First Mate')) && 
-                    (nextMsg.message.includes('[First Mate]'))
-                ) {
-                    pauseDuration = 3500; // Dramatic "Summoning" pause
+                if (nextText.includes('[System]') || nextText.includes('First Mate AI has entered') || nextText.includes('[First Mate]')) {
+                    pauseDuration = 3000; // 3 Second "Summoning" Delay
                 }
 
                 setTimeout(() => {
@@ -116,7 +111,6 @@ window.simulateTyping = (messages, defaultDelay = 50, callback) => {
         }
     };
 
-    // Start the loop
     typeNextChar();
 };
 
