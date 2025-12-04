@@ -457,6 +457,13 @@ function handleDebugTest($pdo, $i, $secrets) {
             
         case 'resync_user_59':
             try {
+                // First, show table schema
+                $columns = $pdo->query("DESCRIBE users")->fetchAll();
+                logSystemEvent($pdo, "Users table columns:", 'info');
+                foreach ($columns as $col) {
+                    logSystemEvent($pdo, "  - {$col['Field']}: {$col['Type']}", 'info');
+                }
+                
                 // Clear user 59 from cache/temp and force fresh load
                 $stmt = $pdo->prepare("SELECT id, full_name, role, status FROM users WHERE id = 59");
                 $stmt->execute();
@@ -466,7 +473,8 @@ function handleDebugTest($pdo, $i, $secrets) {
                     $result = "User #59: ✗ NOT FOUND - User does not exist in database";
                     logSystemEvent($pdo, $result, 'error');
                 } else {
-                    $result = "User #59 Found: ID={$user['id']}, Name={$user['full_name']}, Role={$user['role']}, Status={$user['status']}";
+                    $role = $user['role'] === '' || $user['role'] === null ? '(EMPTY)' : $user['role'];
+                    $result = "User #59 Found: ID={$user['id']}, Name={$user['full_name']}, Role=$role, Status={$user['status']}";
                     logSystemEvent($pdo, $result, 'info');
                     
                     // If they're a partner, verify they're in partner list
@@ -495,8 +503,10 @@ function handleDebugTest($pdo, $i, $secrets) {
                 
                 if ($count > 0) {
                     foreach ($partners as $p) {
-                        logSystemEvent($pdo, "  - Partner #{$p['id']}: {$p['full_name']}", 'info');
+                        logSystemEvent($pdo, "  - Partner #{$p['id']}: {$p['full_name']} (role={$p['role']}, status={$p['status']})", 'info');
                     }
+                } else {
+                    logSystemEvent($pdo, "No active partners found in database", 'warning');
                 }
             } catch (Exception $e) {
                 $result = "Rebuild Partners: ✗ ERROR - " . $e->getMessage();

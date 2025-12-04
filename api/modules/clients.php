@@ -48,7 +48,8 @@ function handleFixUserAccount($pdo, $i, $s) {
     $role = strtolower(trim($i['role'])); 
     $status = $i['status'];
     
-    error_log("[FIX_USER] Starting fix for User #$uid -> role=$role, status=$status");
+    error_log("[FIX_USER] Starting fix for User #$uid -> role='$role', status='$status'");
+    error_log("[FIX_USER] Input role type: " . gettype($i['role']) . ", Input status type: " . gettype($i['status']));
     if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Attempting fix for User #$uid -> $role / $status", 'warning');
 
     try {
@@ -64,17 +65,20 @@ function handleFixUserAccount($pdo, $i, $s) {
         
         error_log("[FIX_USER] User exists: " . $user_check['full_name']);
 
-        // 2. Perform Update
-        $stmt = $pdo->prepare("UPDATE users SET role = ?, status = ? WHERE id = ?");
+        // 2. Perform Update - with explicit column names
+        $updateSql = "UPDATE users SET role = ?, status = ? WHERE id = ?";
+        error_log("[FIX_USER] Executing: $updateSql with values: role='$role', status='$status', id=$uid");
+        
+        $stmt = $pdo->prepare($updateSql);
         $result = $stmt->execute([$role, $status, $uid]);
         
-        error_log("[FIX_USER] UPDATE executed successfully");
+        error_log("[FIX_USER] UPDATE executed. Result: " . ($result ? 'TRUE' : 'FALSE') . ", Affected rows: " . $stmt->rowCount());
         
         // Verify update worked
-        $verify = $pdo->prepare("SELECT role, status FROM users WHERE id = ?");
+        $verify = $pdo->prepare("SELECT id, role, status FROM users WHERE id = ?");
         $verify->execute([$uid]);
         $updated = $verify->fetch();
-        error_log("[FIX_USER] VERIFY: User now has role=" . ($updated['role'] ?? 'NULL') . ", status=" . ($updated['status'] ?? 'NULL'));
+        error_log("[FIX_USER] VERIFY: User now has id=" . ($updated['id'] ?? 'NULL') . ", role='" . ($updated['role'] ?? 'NULL') . "', status='" . ($updated['status'] ?? 'NULL') . "'");
         
         // 3. Always report success if we didn't crash
         if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Fix Applied for User #$uid", 'success');
