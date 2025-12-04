@@ -32,14 +32,19 @@ const Sidebar = ({ view, setView, role, onLogout, isOpen, onClose }) => {
             { id: 'support', label: 'Support', icon: 'MessageSquare' },
             { id: 'settings', label: 'Settings', icon: 'Settings' } 
           ]
-        : [
+        : (role === 'partner' ? [
+            { id: 'dashboard', label: 'Partner Command', icon: 'Activity' },
+            { id: 'projects', label: 'Managed Projects', icon: 'Folder' },
+            { id: 'support', label: 'Client Support', icon: 'MessageSquare' },
+            { id: 'settings', label: 'My Settings', icon: 'Settings' }
+          ] : [
             { id: 'dashboard', label: 'Dashboard', icon: 'Home' }, 
             { id: 'projects', label: 'Projects', icon: 'Folder' }, 
             { id: 'files', label: 'Files', icon: 'File' }, 
             { id: 'billing', label: 'Billing', icon: 'CreditCard' }, 
             { id: 'services', label: 'Services', icon: 'ShoppingBag' },
             { id: 'support', label: 'Support', icon: 'MessageSquare' }
-          ];
+          ]);
 
     return (
         <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-[#2c3259] text-white transform transition-transform shadow-2xl h-full ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 flex flex-col`}>
@@ -95,7 +100,7 @@ const App = () => {
     const { 
         Icons, PortalBackground, NotificationBell, PortalNotice,
         LoginScreen, SetPasswordScreen, OnboardingView,
-        AdminDashboard, ClientDashboard, 
+        AdminDashboard, PartnerDashboard, ClientDashboard, 
         ProjectsView, FilesView, BillingView, ServicesView, 
         ClientsView, SettingsView, SupportView
     } = window;
@@ -176,7 +181,9 @@ const App = () => {
                 {view === 'dashboard' && (
                     session.role === 'admin' 
                     ? <AdminDashboard token={session.token} setView={setView} /> 
-                    : <ClientDashboard name={session.name} setView={setView} token={session.token} /> 
+                    : (session.role === 'partner' 
+                        ? <PartnerDashboard token={session.token} setView={setView} />
+                        : <ClientDashboard name={session.name} setView={setView} token={session.token} />)
                 )}
                 
                 {view === 'projects' && <ProjectsView token={session.token} role={session.role} currentUserId={session.user_id} />}

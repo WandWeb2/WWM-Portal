@@ -149,6 +149,11 @@ try {
         case 'get_settings': handleGetSettings($pdo, $input); break;
         case 'update_settings': handleUpdateSettings($pdo, $input); break;
 
+        // Recovery & Partner Tools
+        case 'get_all_users': handleGetAllUsers($pdo, $input); break;
+        case 'fix_user_account': handleFixUserAccount($pdo, $input, $secrets); break;
+        case 'get_partner_dashboard': handleGetPartnerDashboard($pdo, $input); break;
+
         default: 
             ob_clean();
             echo json_encode(['status' => 'error', 'message' => 'Invalid Action: ' . $action]);

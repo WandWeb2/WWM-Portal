@@ -552,6 +552,7 @@ window.SettingsView = ({ token, role }) => {
     const Icons = window.Icons;
     const [activeTab, setActiveTab] = React.useState('admin_controls'); 
     const [users, setUsers] = React.useState([]);
+    const [rawUsers, setRawUsers] = React.useState([]); // For Audit
     const [partners, setPartners] = React.useState([]);
     const [clients, setClients] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
@@ -564,12 +565,20 @@ window.SettingsView = ({ token, role }) => {
     React.useEffect(() => {
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'partners') fetchPartners();
+        if (activeTab === 'audit') fetchAudit();
     }, [activeTab]);
 
     const fetchUsers = async () => {
         setLoading(true);
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
         if (res.status === 'success') setUsers(res.clients || []);
+        setLoading(false);
+    };
+
+    const fetchAudit = async () => {
+        setLoading(true);
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_all_users', token }) });
+        if (res.status === 'success') setRawUsers(res.users || []);
         setLoading(false);
     };
 
@@ -590,63 +599,67 @@ window.SettingsView = ({ token, role }) => {
         });
         if (res.status === 'success') fetchUsers(); else alert(res.message);
     };
+    
+    const handleForceFix = async (userId, role, status) => {
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'fix_user_account', token, target_user_id: userId, role, status }) });
+        if (res.status === 'success') { alert("Recovered!"); fetchAudit(); } else alert(res.message);
+    };
 
     const handleAssignClient = async (clientId) => {
         if (!selectedPartner) return;
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_partner', token, partner_id: selectedPartner.id, client_id: clientId }) });
-        if (res.status === 'success') {
-            setShowAssignModal(false);
-            alert('Client assigned to partner');
-        } else {
-            alert('Error: ' + res.message);
-        }
+        if (res.status === 'success') { setShowAssignModal(false); alert('Client assigned'); } else { alert(res.message); }
     };
-
-    const handleRecalculateAll = async () => {
-        // This is a client-side loop helper to refresh project stats if they drift
-        setLogs(prev => ["Triggering project health check...", ...prev]);
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) });
-        if(res.projects) {
-            setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]);
-            // Force reload via event
-            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); 
-            setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100);
-        }
-    };
-
-    // Existing Data Sync Logic
-    const handleMasterSync = async () => { 
-        setLoading(true); setLogs(prev => ["[START] Master Sync...", ...prev]); 
-        try { 
-            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); 
-            setLogs(prev => ["[CRM] Done", ...prev]); 
-            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); 
-            setLogs(prev => ["[STRIPE] Done", ...prev]); 
-        } catch (e) { setLogs(prev => ["[ERROR] Sync Failed", ...prev]); }
-        setLoading(false);
-    };
+    
+    const handleRecalculateAll = async () => { setLogs(prev => ["Triggering project health check...", ...prev]); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }); if(res.projects) { setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]); window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100); } };
+    const handleMasterSync = async () => { setLoading(true); setLogs(prev => ["[START] Master Sync...", ...prev]); try { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); setLogs(prev => ["[CRM] Done", ...prev]); await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); setLogs(prev => ["[STRIPE] Done", ...prev]); } catch (e) { setLogs(prev => ["[ERROR] Sync Failed", ...prev]); } setLoading(false); };
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex gap-4 border-b border-slate-200 pb-1">
-                <button onClick={() => setActiveTab('admin_controls')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'admin_controls' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>Admin Suite</button>
-                <button onClick={() => setActiveTab('users')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'users' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>User Manager</button>
-                <button onClick={() => setActiveTab('partners')} className={`px-4 py-2 text-sm font-bold ${activeTab === 'partners' ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>Partner Management</button>
+            <div className="flex gap-4 border-b border-slate-200 pb-1 overflow-x-auto">
+                {['admin_controls', 'users', 'partners', 'audit'].map(t => (
+                    <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 text-sm font-bold capitalize whitespace-nowrap ${activeTab === t ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>{t.replace('_', ' ')}</button>
+                ))}
             </div>
+
+            {activeTab === 'audit' && (
+                <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
+                    <div className="p-4 bg-red-100 text-red-900 text-sm font-bold flex justify-between">
+                        <span>⚠️ Database Audit (Recovery Mode)</span>
+                        <span>Total Records: {rawUsers.length}</span>
+                    </div>
+                    <table className="w-full text-xs text-left">
+                        <thead className="bg-white border-b"><tr><th className="p-2">ID</th><th className="p-2">Name/Email</th><th className="p-2">Raw Role</th><th className="p-2">Raw Status</th><th className="p-2 text-right">Force Fix</th></tr></thead>
+                        <tbody>
+                            {rawUsers.map(u => (
+                                <tr key={u.id} className="border-b bg-white">
+                                    <td className="p-2 font-mono text-slate-400">{u.id}</td>
+                                    <td className="p-2">
+                                        <div className="font-bold">{u.full_name}</div>
+                                        <div className="text-slate-500">{u.email}</div>
+                                    </td>
+                                    <td className="p-2 font-mono text-red-600">{u.role}</td>
+                                    <td className="p-2 font-mono">{u.status}</td>
+                                    <td className="p-2 text-right flex gap-1 justify-end">
+                                        <button onClick={()=>handleForceFix(u.id, 'partner', 'active')} className="bg-slate-800 text-white px-2 py-1 rounded hover:bg-black">Make Partner</button>
+                                        <button onClick={()=>handleForceFix(u.id, 'client', 'active')} className="bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300">Make Client</button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             {activeTab === 'admin_controls' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-white p-6 rounded-xl border shadow-sm">
                         <h3 className="text-lg font-bold text-[#2c3259] mb-2 flex items-center gap-2"><Icons.Activity size={20}/> Project Health</h3>
-                        <p className="text-sm text-slate-500 mb-4">Fix progress bars and sync task counts.</p>
                         <button onClick={handleRecalculateAll} className="bg-slate-100 text-slate-700 px-4 py-2 rounded font-bold text-xs hover:bg-slate-200 w-full text-left">Recalculate Metrics</button>
                     </div>
                     <div className="bg-white p-6 rounded-xl border shadow-sm">
                         <h3 className="text-lg font-bold text-[#2c3259] mb-2 flex items-center gap-2"><Icons.Cloud size={20}/> External Data</h3>
-                        <p className="text-sm text-slate-500 mb-4">Pull latest clients from Stripe & CRM.</p>
-                        <button onClick={handleMasterSync} disabled={loading} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-xs w-full text-left flex justify-between items-center">
-                            {loading ? 'Syncing...' : 'Run Master Sync'} <Icons.ArrowDown size={14}/>
-                        </button>
+                        <button onClick={handleMasterSync} disabled={loading} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-xs w-full text-left flex justify-between items-center">{loading ? 'Syncing...' : 'Run Master Sync'} <Icons.ArrowDown size={14}/></button>
                     </div>
                     {logs.length > 0 && <div className="col-span-2 bg-slate-900 text-green-400 p-4 rounded-lg font-mono text-xs max-h-40 overflow-y-auto">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>}
                 </div>
@@ -687,16 +700,9 @@ window.SettingsView = ({ token, role }) => {
                             <tbody>
                                 {partners.map(p => (
                                     <tr key={p.id} className="border-b">
-                                        <td className="p-3">
-                                            <div className="font-bold text-[#2c3259]">{p.full_name || 'Unnamed'}</div>
-                                        </td>
-                                        <td className="p-3">
-                                            <div className="text-xs text-slate-600">{p.email}</div>
-                                            {p.phone && <div className="text-xs text-slate-400">{p.phone}</div>}
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            <button onClick={() => { setSelectedPartner(p); setShowAssignModal(true); }} className="bg-[#2493a2] text-white px-3 py-1 rounded text-xs font-bold hover:bg-[#1e7e8b]">Assign Client</button>
-                                        </td>
+                                        <td className="p-3"><div className="font-bold text-[#2c3259]">{p.full_name || 'Unnamed'}</div></td>
+                                        <td className="p-3"><div className="text-xs text-slate-600">{p.email}</div></td>
+                                        <td className="p-3 text-right"><button onClick={() => { setSelectedPartner(p); setShowAssignModal(true); }} className="bg-[#2493a2] text-white px-3 py-1 rounded text-xs font-bold hover:bg-[#1e7e8b]">Assign Client</button></td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -708,22 +714,8 @@ window.SettingsView = ({ token, role }) => {
             {showAssignModal && selectedPartner && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
-                        <div className="p-6 border-b flex justify-between items-center">
-                            <h3 className="font-bold text-lg">Assign Client to {selectedPartner.full_name}</h3>
-                            <button onClick={() => setShowAssignModal(false)}><Icons.Close/></button>
-                        </div>
-                        <div className="p-6">
-                            <p className="text-sm text-slate-600 mb-4">Select a client to assign to this partner:</p>
-                            <div className="space-y-2 max-h-80 overflow-y-auto">
-                                {clients.map(c => (
-                                    <button key={c.id} onClick={() => handleAssignClient(c.id)} className="w-full text-left p-3 border rounded hover:bg-slate-50 transition-colors">
-                                        <div className="font-bold text-[#2c3259]">{c.full_name}</div>
-                                        <div className="text-xs text-slate-400">{c.email}</div>
-                                        {c.business_name && <div className="text-xs text-slate-500">{c.business_name}</div>}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        <div className="p-6 border-b flex justify-between items-center"><h3 className="font-bold text-lg">Assign Client to {selectedPartner.full_name}</h3><button onClick={() => setShowAssignModal(false)}><Icons.Close/></button></div>
+                        <div className="p-6"><p className="text-sm text-slate-600 mb-4">Select a client to assign:</p><div className="space-y-2 max-h-80 overflow-y-auto">{clients.map(c => (<button key={c.id} onClick={() => handleAssignClient(c.id)} className="w-full text-left p-3 border rounded hover:bg-slate-50 transition-colors"><div className="font-bold text-[#2c3259]">{c.full_name}</div><div className="text-xs text-slate-400">{c.email}</div></button>))}</div></div>
                     </div>
                 </div>
             )}
@@ -863,6 +855,65 @@ window.ServicesView = ({ token, role }) => {
         {modal==='sort' && <ServiceSortModal services={groupedServices} onClose={()=>setModal(null)} onSave={handleSaveOrder} />}
         {modal==='product' && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>setModal(null)} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">New Product</h3><form onSubmit={handleCreateProduct} className="space-y-4"><input name="name" placeholder="Name" className="w-full p-2 border rounded" required/><input name="description" placeholder="Desc" className="w-full p-2 border rounded"/><input name="category" placeholder="Category" className="w-full p-2 border rounded" /><div className="flex gap-2"><input name="amount" type="number" placeholder="$" className="w-full p-2 border rounded" required/><select name="interval" className="p-2 border rounded"><option value="one-time">Once</option><option value="month">Month</option><option value="year">Year</option></select></div><button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">Save</button></form></div></div>}
         {modal==='edit' && editingItem && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>{setModal(null); setEditingItem(null);}} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">Edit Product</h3><form onSubmit={handleUpdateProduct} className="space-y-4"><input name="name" defaultValue={editingItem.name} className="w-full p-2 border rounded" required/><textarea name="description" defaultValue={editingItem.description} className="w-full p-2 border rounded h-24"/><input name="category" defaultValue={editingItem.category} className="w-full p-2 border rounded" placeholder="Category"/><button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">Update Details</button></form></div></div>)}
+        </div>
+    );
+};
+
+window.PartnerDashboard = ({ token, setView }) => {
+    const Icons = window.Icons;
+    const [stats, setStats] = React.useState({ client_count: 0, projects: [] });
+    
+    React.useEffect(() => {
+        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_partner_dashboard', token }) })
+            .then(r => r.status==='success' && setStats(r));
+    }, [token]);
+
+    const handleNav = (id) => {
+        localStorage.setItem('pending_nav', JSON.stringify({ view: 'projects', target_id: id }));
+        window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' }));
+    };
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="bg-[#2c3259] text-white p-8 rounded-2xl shadow-lg">
+                <h2 className="text-3xl font-bold">Partner Command</h2>
+                <p className="text-white/60 text-sm mt-1">You are managing {stats.client_count} client(s).</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div onClick={()=>setView('projects')} className="bg-white p-6 rounded-xl border shadow-sm cursor-pointer hover:border-[#2493a2] group">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="p-3 bg-orange-100 text-orange-600 rounded-lg group-hover:bg-[#2493a2] group-hover:text-white transition-colors"><Icons.Folder /></div>
+                        <h3 className="font-bold text-lg text-slate-800">Managed Projects</h3>
+                    </div>
+                    <p className="text-sm text-slate-500">{stats.projects.length} Active</p>
+                </div>
+                <div onClick={()=>setView('support')} className="bg-white p-6 rounded-xl border shadow-sm cursor-pointer hover:border-[#2493a2] group">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="p-3 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-[#2493a2] group-hover:text-white transition-colors"><Icons.MessageSquare /></div>
+                        <h3 className="font-bold text-lg text-slate-800">Client Tickets</h3>
+                    </div>
+                    <p className="text-sm text-slate-500">View Thread History</p>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-xl border p-6 shadow-sm">
+                <h3 className="font-bold text-lg text-[#2c3259] mb-4">Your Active Portfolio</h3>
+                {stats.projects.length === 0 ? <p className="text-slate-400 text-xs">No active projects assigned.</p> : stats.projects.map(p=>(
+                    <div key={p.id} onClick={()=>handleNav(p.id)} className="flex justify-between py-3 border-b last:border-0 cursor-pointer hover:bg-slate-50 transition-colors group">
+                        <div>
+                            <span className="font-bold text-slate-700 group-hover:text-[#2493a2] block">{p.title}</span>
+                            <span className="text-xs text-slate-400">{p.client_name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                             <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div className={`h-full ${p.health_score > 50 ? 'bg-green-500' : 'bg-red-500'}`} style={{width: p.health_score+'%'}}></div>
+                            </div>
+                            <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${p.status==='active'?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}`}>{p.status}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 };
