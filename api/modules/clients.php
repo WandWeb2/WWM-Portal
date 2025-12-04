@@ -48,29 +48,50 @@ function handleFixUserAccount($pdo, $i, $s) {
     $role = strtolower(trim($i['role'])); 
     $status = $i['status'];
     
+    error_log("[FIX_USER] Starting fix for User #$uid -> role=$role, status=$status");
     if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Attempting fix for User #$uid -> $role / $status", 'warning');
 
     try {
         // 1. Verify User Exists FIRST
-        $check = $pdo->prepare("SELECT id FROM users WHERE id = ?");
+        $check = $pdo->prepare("SELECT id, full_name FROM users WHERE id = ?");
         $check->execute([$uid]);
-        if (!$check->fetch()) {
+        $user_check = $check->fetch();
+        
+        if (!$user_check) {
+            error_log("[FIX_USER] ERROR: User #$uid does not exist");
             sendJson('error', "User ID #$uid does not exist in database.");
         }
+        
+        error_log("[FIX_USER] User exists: " . $user_check['full_name']);
 
         // 2. Perform Update
         $stmt = $pdo->prepare("UPDATE users SET role = ?, status = ? WHERE id = ?");
-        $stmt->execute([$role, $status, $uid]);
+        $result = $stmt->execute([$role, $status, $uid]);
+        
+        error_log("[FIX_USER] UPDATE executed successfully");
+        
+        // Verify update worked
+        $verify = $pdo->prepare("SELECT role, status FROM users WHERE id = ?");
+        $verify->execute([$uid]);
+        $updated = $verify->fetch();
+        error_log("[FIX_USER] VERIFY: User now has role=" . ($updated['role'] ?? 'NULL') . ", status=" . ($updated['status'] ?? 'NULL'));
         
         // 3. Always report success if we didn't crash
         if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Fix Applied for User #$uid", 'success');
         
-        // 4. Sync
-        syncClientToExternal($pdo, $uid, $s);
+        // 4. Sync (wrapped for safety)
+        try {
+            syncClientToExternal($pdo, $uid, $s);
+            error_log("[FIX_USER] Sync completed");
+        } catch (Exception $syncErr) {
+            error_log("[FIX_USER] Sync failed (non-fatal): " . $syncErr->getMessage());
+        }
         
+        error_log("[FIX_USER] SUCCESS: User #$uid fixed");
         sendJson('success', 'Account Role Updated');
 
     } catch (Exception $e) {
+        error_log("[FIX_USER] EXCEPTION: " . $e->getMessage());
         if(function_exists('logSystemEvent')) logSystemEvent($pdo, "DB Crash: " . $e->getMessage(), 'error');
         sendJson('error', 'Database Error: ' . $e->getMessage());
     }

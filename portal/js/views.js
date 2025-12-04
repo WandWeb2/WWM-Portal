@@ -565,14 +565,19 @@ window.SettingsView = ({ token, role }) => {
 
     // Auto-navigate to partners tab if user was just fixed
     React.useEffect(() => {
+        console.log('[SettingsView Mount] Checking for _justFixedUser flag...');
         const fixed = sessionStorage.getItem('_justFixedUser');
+        console.log('[SettingsView Mount] Flag:', fixed);
         if (fixed) {
+            const msg = JSON.parse(fixed);
+            console.log(`[SettingsView Mount] AUTO-NAV to partners tab for user #${msg.id}`);
             setActiveTab('partners');
             sessionStorage.removeItem('_justFixedUser');
             setTimeout(() => {
-                const msg = JSON.parse(fixed);
                 alert(`✓ User #${msg.id} is now a ${msg.role.toUpperCase()}. Check Partners tab.`);
-            }, 100);
+            }, 500);
+        } else {
+            console.log('[SettingsView Mount] No flag, starting at audit tab');
         }
     }, []);
 
@@ -612,9 +617,17 @@ window.SettingsView = ({ token, role }) => {
 
     const fetchPartners = async () => {
         setLoading(true);
+        console.log('[Partners Tab] Fetching partners...');
         const pRes = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_partners', token }) });
-        if (pRes.status === 'success') setPartners(pRes.partners || []);
+        console.log('[Partners Tab] API Response:', pRes);
+        if (pRes.status === 'success') {
+            console.log('[Partners Tab] Partners:', pRes.partners);
+            setPartners(pRes.partners || []);
+        } else {
+            console.error('[Partners Tab] Failed:', pRes.message);
+        }
         const cRes = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) });
+        console.log('[Partners Tab] Clients Response:', cRes.clients);
         if (cRes.status === 'success') setClients((cRes.clients || []).filter(c => c.role === 'client'));
         setLoading(false);
     };
@@ -629,6 +642,7 @@ window.SettingsView = ({ token, role }) => {
     };
     
     const handleForceFix = async (userId, role, status) => {
+        console.log(`[Make Partner] Clicked for User #${userId}, role=${role}, status=${status}`);
         const btn = document.activeElement;
         const originalText = btn.innerText;
         btn.innerText = "...";
@@ -636,13 +650,18 @@ window.SettingsView = ({ token, role }) => {
 
         // Call the safer backend
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'fix_user_account', token, target_user_id: userId, role, status }) });
+        console.log('[Make Partner] API Response:', res);
         
         if (res.status === 'success') { 
-            alert("Account recovered successfully. Reloading to apply changes...");
-            // Store the target role/status so we can verify after reload
+            console.log(`[Make Partner] SUCCESS - Setting sessionStorage and reloading`);
             sessionStorage.setItem('_justFixedUser', JSON.stringify({id: userId, role, status, timestamp: Date.now()}));
-            // Force hard reload to ensure all lists (Partners/Clients) are rebuilt from scratch
-            setTimeout(() => window.location.reload(), 100); 
+            console.log(`[Make Partner] sessionStorage set:`, sessionStorage.getItem('_justFixedUser'));
+            alert("Account recovered successfully. Reloading to apply changes...");
+            console.log(`[Make Partner] About to reload...`);
+            setTimeout(() => {
+                console.log('[Make Partner] RELOADING PAGE');
+                window.location.reload(); 
+            }, 100); 
         } else {
             alert("Error: " + (res.message || 'Action failed'));
             btn.innerText = originalText;
