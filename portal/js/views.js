@@ -1185,29 +1185,42 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
         if(!reply.trim()) return;
         
         const textToSend = reply;
-        setReply(""); // Clear input immediately
+        const tempId = 'temp-' + Date.now();
+        setReply(""); 
         
-        // 1. Optimistic Update (Show immediately)
+        // 1. Optimistic Update
         const tempMsg = {
-            id: 'temp-' + Date.now(),
-            role: role, // Matches current user role for alignment
-            sender_id: 99999, // Temporary ID to force "User" alignment
+            id: tempId,
+            role: role, 
+            sender_id: 99999, 
             message: textToSend,
             created_at: new Date().toISOString()
         };
         setMessages(prev => [...prev, tempMsg]);
         setIsThinking(true);
 
-        // 2. Send to Server
-        await window.safeFetch(API_URL, { 
-            method: 'POST', 
-            body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: textToSend, is_internal: isInternal }) 
-        });
+        try {
+            // 2. Send to Server
+            const sendRes = await window.safeFetch(API_URL, { 
+                method: 'POST', 
+                body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: textToSend, is_internal: isInternal }) 
+            });
 
-        // 3. Refresh Thread (Get AI response)
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
-        if(res.status==='success') setMessages(res.messages);
-        setIsThinking(false);
+            if (sendRes.status !== 'success') throw new Error(sendRes.message || "Failed to send");
+
+            // 3. Refresh Thread
+            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
+            if(res.status==='success') {
+                setMessages(res.messages);
+            }
+        } catch (err) {
+            console.error(err);
+            // Remove optimistic message or show error
+            setMessages(prev => prev.filter(m => m.id !== tempId));
+            alert("Error sending message: " + err.message);
+        } finally {
+            setIsThinking(false);
+        }
     };
     
     const handleClose = async () => {
@@ -1221,6 +1234,12 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
         const history = messages.map(m => `${m.full_name || (m.sender_id===0?'System':'Unknown')}: ${m.message}`).join('\n');
         const brief = `SOURCE TICKET: ${ticket.subject}\n\nCONTEXT:\n${history}`;
         window.dispatchEvent(new CustomEvent('open_project_modal', { detail: { client_id: ticket.user_id, notes: brief } }));
+    };
+
+    const handleReopen = async () => {
+         if(!confirm("Re-open this ticket?")) return;
+         await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_ticket_status', token, ticket_id: ticket.id, status: 'open' }) });
+         if(onUpdate) onUpdate();
     };
 
     return (
@@ -1274,23 +1293,32 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                 )}
             </div>
 
-            <form onSubmit={handleSend} className="p-4 border-t bg-white">
-                {isAdmin && (
-                    <div className="flex items-center gap-2 mb-2">
-                        <input type="checkbox" checked={isInternal} onChange={e=>setIsInternal(e.target.checked)} id="internal_note" className="w-4 h-4 text-[#2c3259]"/>
-                        <label htmlFor="internal_note" className="text-xs font-bold text-slate-500 cursor-pointer select-none">Internal Note (Client won't see this)</label>
-                    </div>
-                )}
-                <div className="flex gap-2">
-                    <input 
-                        value={reply} 
-                        onChange={e=>setReply(e.target.value)} 
-                        className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 ${isInternal ? 'focus:ring-yellow-400 bg-yellow-50' : 'focus:ring-[#2493a2]'}`} 
-                        placeholder={isInternal ? "Add an internal note..." : "Type your reply..."}
-                    />
-                    <button className="bg-[#2c3259] text-white p-3 rounded-lg"><Icons.Send size={18}/></button>
+            {ticket.status === 'closed' ? (
+                <div className="p-4 border-t bg-slate-50 text-center text-slate-500 text-sm font-bold flex items-center justify-center gap-2">
+                    <window.Icons.Lock size={16}/> This ticket is closed.
+                    {(isAdmin || role === 'client') && (
+                        <button onClick={() => handleReopen()} className="text-blue-600 hover:underline ml-2">Re-open</button>
+                    )}
                 </div>
-            </form>
+            ) : (
+                <form onSubmit={handleSend} className="p-4 border-t bg-white">
+                    {isAdmin && (
+                        <div className="flex items-center gap-2 mb-2">
+                            <input type="checkbox" checked={isInternal} onChange={e=>setIsInternal(e.target.checked)} id="internal_note" className="w-4 h-4 text-[#2c3259]"/>
+                            <label htmlFor="internal_note" className="text-xs font-bold text-slate-500 cursor-pointer select-none">Internal Note (Client won't see this)</label>
+                        </div>
+                    )}
+                    <div className="flex gap-2">
+                        <input 
+                            value={reply} 
+                            onChange={e=>setReply(e.target.value)} 
+                            className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 ${isInternal ? 'focus:ring-yellow-400 bg-yellow-50' : 'focus:ring-[#2493a2]'}`} 
+                            placeholder={isInternal ? "Add an internal note..." : "Type your reply..."}
+                        />
+                        <button className="bg-[#2c3259] text-white p-3 rounded-lg"><Icons.Send size={18}/></button>
+                    </div>
+                </form>
+            )}
         </>
     );
 };

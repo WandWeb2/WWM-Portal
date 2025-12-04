@@ -81,7 +81,9 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     
     $reply = $res['candidates'][0]['content']['parts'][0]['text'] ?? '';
     $reply = trim(str_replace(['[Second Mate]', '[First Mate]'], '', $reply));
-    if (empty($reply)) return;
+    if (empty($reply)) {
+        $reply = "I apologize, but I am having trouble accessing my knowledge base right now. Please stand by for a human agent.";
+    }
 
     // 6. Process Logic Tags
     $nextStatus = $status;
@@ -251,6 +253,11 @@ function handleUpdateTicketStatus($pdo, $i) {
     
     // Allow admins to change any status
     if ($u['role'] === 'admin') {
+        if ($newStatus === 'closed') {
+            $closer = "An Administrator";
+            $msg = "[System] Ticket closed by $closer. Replies are now disabled.";
+            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $msg]);
+        }
         $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$newStatus, $ticketId]);
         sendJson('success', 'Status Updated');
     }
@@ -262,6 +269,9 @@ function handleUpdateTicketStatus($pdo, $i) {
         $ticket = $stmt->fetch();
         
         if ($ticket && $ticket['user_id'] == $u['uid']) {
+            $closer = "The Client";
+            $msg = "[System] Ticket closed by $closer. Replies are now disabled.";
+            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $msg]);
             $pdo->prepare("UPDATE tickets SET status = 'closed' WHERE id = ?")->execute([$ticketId]);
             sendJson('success', 'Ticket Closed');
         }
