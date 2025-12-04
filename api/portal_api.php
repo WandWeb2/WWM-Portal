@@ -46,6 +46,7 @@ try {
     require_once __DIR__ . '/modules/projects.php';
     require_once __DIR__ . '/modules/billing.php';
     require_once __DIR__ . '/modules/clients.php';
+    require_once __DIR__ . '/modules/files.php';
 
     $pdo = getDBConnection($secrets);
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -79,7 +80,15 @@ try {
      	case 'reply_ticket': require_once __DIR__.'/modules/support.php'; handleReplyTicket($pdo, $input, $secrets); break;
      	case 'update_ticket_status': require_once __DIR__.'/modules/support.php'; handleUpdateTicketStatus($pdo, $input); break;
         case 'escalate_ticket': require_once __DIR__.'/modules/support.php'; handleEscalateTicket($pdo, $input); break;
-     	case 'suggest_solution': require_once __DIR__.'/modules/support.php'; handleSuggestSolution($input, $secrets); break;		        // Projects
+     	case 'suggest_solution': require_once __DIR__.'/modules/support.php'; handleSuggestSolution($input, $secrets); break;
+        
+        // Files (Google Drive Integration)
+        case 'get_files': handleGetFiles($pdo, $input); break;
+        case 'upload_file': handleUploadFile($pdo, $input, $secrets); break;
+        case 'delete_file': handleDeleteFile($pdo, $input, $secrets); break;
+        case 'download_file': handleDownloadFile($pdo, $input, $secrets); break;
+
+        // Projects
         case 'get_admin_dashboard': handleGetAdminDashboard($pdo, $input, $secrets); break;
         case 'get_projects': handleGetProjects($pdo, $input); break;
         case 'create_project': handleCreateProject($pdo, $input); break;
@@ -92,8 +101,6 @@ try {
         case 'delete_task': handleDeleteTask($pdo, $input); break;
         case 'toggle_task': handleToggleTask($pdo, $input); break;
         case 'post_comment': handlePostComment($pdo, $input); break;
-        case 'get_files': handleGetFiles($pdo, $input); break;
-        case 'upload_file': handleUploadFile($pdo, $input); break;
         case 'upload_project_file': handleUploadProjectFile($pdo, $input); break;
 
         // Billing

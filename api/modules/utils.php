@@ -277,4 +277,37 @@ function notifyAllAdminsForProject($pdo, $projectId, $message) {
         createNotification($pdo, $admin['id'], $message, 'project', $projectId);
     }
 }
+
+// === GOOGLE DRIVE OAUTH HELPER ===
+function getGoogleAccessToken($secrets) {
+    if (empty($secrets['GOOGLE_CLIENT_ID']) || empty($secrets['GOOGLE_CLIENT_SECRET']) || empty($secrets['GOOGLE_REFRESH_TOKEN'])) {
+        throw new Exception("Missing Google OAuth credentials in secrets.php");
+    }
+
+    $ch = curl_init("https://oauth2.googleapis.com/token");
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'client_id' => $secrets['GOOGLE_CLIENT_ID'],
+        'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'],
+        'refresh_token' => $secrets['GOOGLE_REFRESH_TOKEN'],
+        'grant_type' => 'refresh_token'
+    ]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/x-www-form-urlencoded']);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode !== 200) {
+        throw new Exception("Google OAuth token refresh failed: HTTP $httpCode - $response");
+    }
+    
+    $data = json_decode($response, true);
+    if (empty($data['access_token'])) {
+        throw new Exception("No access token in Google OAuth response");
+    }
+    
+    return $data['access_token'];
+}
 ?>
