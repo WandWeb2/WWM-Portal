@@ -154,6 +154,7 @@ try {
         case 'get_all_users': handleGetAllUsers($pdo, $input); break;
         case 'fix_user_account': handleFixUserAccount($pdo, $input, $secrets); break;
         case 'get_partner_dashboard': handleGetPartnerDashboard($pdo, $input); break;
+        case 'get_system_logs': handleGetSystemLogs($pdo, $input); break;
 
         default: 
             ob_clean();

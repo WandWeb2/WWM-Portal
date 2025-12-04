@@ -384,7 +384,7 @@ function internalGeminiRequest($apiKey, $model, $sys, $user) {
     return json_decode($res, true);
 }
 
-// === SYSTEM LOGGING ===
+// === SYSTEM LOGGING (RESTORED) ===
 function ensureLogSchema($pdo) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -400,8 +400,8 @@ function logSystemEvent($pdo, $message, $level = 'info') {
         $stmt = $pdo->prepare("INSERT INTO system_logs (level, message) VALUES (?, ?)");
         $stmt->execute([$level, $message]);
     } catch (Exception $e) { 
-        // Fallback to error_log if DB fails
-        error_log("DB LOG FAILED: $message"); 
+        // Fallback to file if DB fails
+        error_log("WANDWEB LOG [$level]: $message"); 
     }
 }
 
