@@ -53,7 +53,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     $ticket = $tStmt->fetch();
 
     // --- AI SILENCE PROTOCOL ---
-    // If ticket is already escalated, AI must NOT reply. Admin is in control.
+    // If ticket is already escalated, AI must NOT reply. Humans are in control.
     if ($ticket['status'] === 'escalated') return;
     
     // Fetch Client Profile
@@ -98,14 +98,14 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     
     PERSONAS:
     1. [Second Mate] (Tier 1): Friendly, helpful. Answers generic questions.
-    2. [First Mate] (Tier 2 Admin): Authoritative, capable.
+    2. [First Mate] (Tier 2): Authoritative, capable.
     
     CRITICAL RULES:
     - You CANNOT edit websites, change billing, or execute technical tasks.
     - If the client requests work (e.g., 'Update my logo'):
       1. Confirm details.
-      2. State: \"I have placed a formal work order and notified the Admin.\"
-      3. Include 'Admin' or 'Dan' to trigger the pager.
+      2. State: \"I have placed a formal work order and notified the humans who will process this.\"
+      3. Include 'humans' in your reply to trigger escalation notification.
     - NEVER direct users to external contact forms.
 
     OUTPUT FORMATS:
@@ -118,7 +118,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     [
       \"[Second Mate] I cannot perform that update directly. Summoning the First Mate to process this work order.\",
       \"[System] First Mate AI has entered the chat.\",
-      \"[First Mate] Hello {$client['full_name']}. I have received your request. I have created a work order and notified the Admin (Dan) to process this immediately. Is there anything else to add?\",
+      \"[First Mate] Hello {$client['full_name']}. I have received your request. I have created a work order and notified the humans to process this immediately. Is there anything else to add?\",
       \"[System] Both AI agents have left the chat. Ticket handed over to human support.\"
     ]
     ";
@@ -140,9 +140,9 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
                 $messagesToAdd = $script;
                 $newStatus = 'escalated';
                 
-                // Notify Admin
+                // Notify Humans
                 $fullResponse = implode(" ", $script);
-                if (stripos($fullResponse, 'Dan') !== false || stripos($fullResponse, 'Admin') !== false) {
+                if (stripos($fullResponse, 'humans') !== false) {
                     if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Requesting Action on Ticket #$ticketId");
                 }
             }
@@ -150,11 +150,19 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         
         if (empty($messagesToAdd) && trim($cleanText) !== '') $messagesToAdd = [$cleanText];
 
-        // Insert Messages
+        // Insert Messages with thinking delays between AI messages
         $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
+        $isFirstMessage = true;
         foreach ($messagesToAdd as $msg) {
-            if (trim($msg)) $stmt->execute([$ticketId, $msg]);
-            usleep(250000); // 0.25s delay for ordering
+            if (trim($msg)) {
+                // Add thinking delay between consecutive AI messages (but not before first AI message)
+                if (!$isFirstMessage) {
+                    usleep(1500000); // 1.5 second thinking pause between AI messages
+                }
+                $stmt->execute([$ticketId, $msg]);
+                $isFirstMessage = false;
+                usleep(250000); // 0.25s delay for DB spacing
+            }
         }
 
         if ($newStatus !== $ticket['status']) {
@@ -271,6 +279,7 @@ function handleReplyTicket($pdo, $i, $s) {
 
     if ($currentStatus === 'closed') {
         sendJson('error', 'This ticket is closed. Replies are disabled.');
+        return;
     }
 
     $isInternal = ($u['role'] === 'admin' && !empty($i['is_internal'])) ? 1 : 0; 

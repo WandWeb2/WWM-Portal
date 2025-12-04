@@ -1716,10 +1716,11 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         <input 
                             value={reply} 
                             onChange={e=>setReply(e.target.value)} 
-                            className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 ${isInternal ? 'focus:ring-yellow-400 bg-yellow-50' : 'focus:ring-[#2493a2]'}`} 
+                            disabled={ticket.status === 'closed'}
+                            className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${isInternal ? 'focus:ring-yellow-400 bg-yellow-50' : 'focus:ring-[#2493a2]'}`} 
                             placeholder={isInternal ? "Add an internal note..." : "Type your reply..."}
                         />
-                        <button className="bg-[#2c3259] text-white p-3 rounded-lg"><Icons.Send size={18}/></button>
+                        <button disabled={ticket.status === 'closed'} className="bg-[#2c3259] text-white p-3 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed hover:bg-[#1a1a3a] disabled:hover:bg-slate-300"><Icons.Send size={18}/></button>
                     </div>
                 </form>
             )}
