@@ -63,4 +63,10 @@ function handleMarkRead($pdo,$i){
     $pdo->prepare("UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?")->execute([(int)$i['id'],$u['uid']]);
     sendJson('success','Read');
 }
+
+function handleMarkAllRead($pdo,$i){
+    $u=verifyAuth($i);
+    $pdo->prepare("UPDATE notifications SET is_read=1 WHERE user_id=?")->execute([$u['uid']]);
+    sendJson('success','All notifications marked as read');
+}
 ?>

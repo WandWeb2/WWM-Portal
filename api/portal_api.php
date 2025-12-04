@@ -71,6 +71,7 @@ try {
         case 'set_password': handleSetPassword($pdo, $input); break;
         case 'get_notifications': handleGetNotifications($pdo, $input); break;
         case 'mark_read': handleMarkRead($pdo, $input); break;
+        case 'mark_all_read': handleMarkAllRead($pdo, $input); break;
 
 		// Support & Ticketing
   		case 'get_tickets': require_once __DIR__.'/modules/support.php'; handleGetTickets($pdo, $input); break;

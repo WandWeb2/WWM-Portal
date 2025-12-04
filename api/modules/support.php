@@ -139,7 +139,13 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
             if (is_array($script)) {
                 $messagesToAdd = $script;
                 $newStatus = 'escalated';
-                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Summoned on Ticket #$ticketId");
+                
+                // ONLY notify Admin if First Mate explicitly requested it
+                // Check the generated text for keywords
+                $fullResponse = implode(" ", $script);
+                if (stripos($fullResponse, 'Dan') !== false || stripos($fullResponse, 'Admin') !== false) {
+                    if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Requesting Assistance on Ticket #$ticketId");
+                }
             }
         }
         

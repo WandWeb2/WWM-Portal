@@ -102,7 +102,7 @@ function getEmailTemplate($pdo) {
 <body>
     <div class='container'>
         <div class='header'>
-            <img src='https://wandweb.co/wp-content/uploads/2024/11/wandweb-logo-white.png' alt='WandWeb Logo' />
+            <h1 style='color: #ffffff; margin: 0; font-size: 24px; font-weight: bold; font-family: sans-serif;'>WandWeb Portal</h1>
         </div>
         <div class='content'>
             [[BODY]]

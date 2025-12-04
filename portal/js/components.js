@@ -294,7 +294,7 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin', title })
     };
 
     return (
-        <div className="bg-[#2c3259] text-white rounded-xl shadow-xl border border-slate-600 relative overflow-hidden mb-8 transition-all duration-300 cursor-pointer hover:shadow-2xl hover:border-[#2493a2]" onClick={handleDeepDive}>
+        <div className="bg-[#2c3259] text-white rounded-xl shadow-xl border border-slate-600 relative overflow-hidden mb-8 transition-all duration-300">
             <div className="p-6 relative z-10">
                 <div className="flex items-center justify-between">
                     <div className="flex gap-4 items-start">
@@ -304,9 +304,6 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin', title })
                         <div>
                             <div className={`flex items-center gap-2 mb-1 ${accentColor} font-bold text-xs tracking-widest uppercase`}>{displayTitle}</div>
                             <p className="text-sm font-medium font-sans leading-relaxed pr-8 opacity-90">"{insight}"</p>
-                            <p className={`text-xs ${accentColor} mt-2 font-bold uppercase tracking-wide flex items-center gap-2`}>
-                                <Icons.MessageSquare size={14}/> {processing ? "Creating Support Session..." : "Click to Discuss / Escalate"}
-                            </p>
                         </div>
                     </div>
                 </div>
@@ -364,7 +361,21 @@ window.NotificationBell = ({ token }) => {
             </button>
             {open && (
                 <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-2xl border overflow-hidden z-50">
-                    <div className="p-3 border-b font-bold text-sm bg-slate-50">Notifications</div>
+                    <div className="p-3 border-b font-bold text-sm bg-slate-50 flex justify-between items-center">
+                        <span>Notifications</span>
+                        {unread > 0 && (
+                            <button 
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'mark_all_read', token }) });
+                                    fetchNotifs();
+                                }}
+                                className="text-xs text-[#2493a2] hover:underline font-medium"
+                            >
+                                Mark all read
+                            </button>
+                        )}
+                    </div>
                     <div className="max-h-80 overflow-y-auto">
                         {list.length === 0 ? <div className="p-4 text-center text-slate-400 text-sm">No notifications</div> : list.map(n => (
                             <div key={n.id} onClick={()=>handleInteract(n)} className={`p-3 border-b text-sm cursor-pointer hover:bg-slate-50 transition-colors ${n.is_read==0?'bg-blue-50 border-l-4 border-l-[#2493a2]':''}`}>
