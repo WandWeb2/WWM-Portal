@@ -46,7 +46,18 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         return;
     }
 
-    // 2. Context Building
+    // 2. ANTI-LOOP GUARD: Check if last message is from AI
+    $lastMsgStmt = $pdo->prepare("SELECT sender_id FROM ticket_messages WHERE ticket_id = ? ORDER BY id DESC LIMIT 1");
+    $lastMsgStmt->execute([$ticketId]);
+    $lastMsg = $lastMsgStmt->fetch();
+    
+    if ($lastMsg && $lastMsg['sender_id'] == 0) {
+        // Last message was from AI/System - STOP to prevent loop
+        error_log("[triggerSupportAI] LOOP PREVENTED: Last message on ticket #$ticketId was from AI (sender_id=0). Skipping.");
+        return;
+    }
+
+    // 3. Context Building
     try {
         $stmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
         $stmt->execute([$ticketId]);
@@ -84,34 +95,54 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         }
         curl_close($ch);
 
+        // SAFETY FILTER LOGGING: Parse raw response
         $data = json_decode($response, true);
+        
+        // Check for blocked/empty responses
+        if (empty($data['candidates'])) {
+            $blockReason = $data['promptFeedback']['blockReason'] ?? 'UNKNOWN';
+            error_log("[triggerSupportAI] Gemini response blocked for ticket #$ticketId. Reason: $blockReason. Raw: " . substr($response, 0, 500));
+            throw new Exception("AI response was blocked by safety filters. Reason: $blockReason");
+        }
+        
+        $finishReason = $data['candidates'][0]['finishReason'] ?? '';
+        if ($finishReason !== 'STOP') {
+            error_log("[triggerSupportAI] Gemini finish reason is '$finishReason' (not STOP) for ticket #$ticketId. Raw: " . substr($response, 0, 500));
+        }
+        
         $reply = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
         $reply = trim(str_replace(['[Second Mate]', '[First Mate]'], '', $reply));
 
-        // 4. Fail-Safe Check
-        if (empty($reply)) {
-            // Check if API returned a specific error
-            $apiError = $data['error']['message'] ?? 'Unknown API Error';
+        // STRICT EMPTY STRING VALIDATION
+        if (trim($reply) === '') {
+            $apiError = $data['error']['message'] ?? 'Empty response after processing';
+            error_log("[triggerSupportAI] Empty reply for ticket #$ticketId. API Error: $apiError");
             throw new Exception("AI returned empty response. Reason: " . $apiError);
         }
 
         // 5. Logic Processing
         if (strpos($reply, '[TRIGGER_HANDOFF]') !== false) {
-            $clean = str_replace('[TRIGGER_HANDOFF]', '', $reply);
-            $pdo->prepare("UPDATE tickets SET status = 'escalating' WHERE id = ?")->execute([$ticketId]);
-            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[Second Mate] " . $clean]);
-            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[First Mate] I have been summoned. I am reviewing the logs now. Client, please provide any extra details."]);
+            $clean = trim(str_replace('[TRIGGER_HANDOFF]', '', $reply));
+            if ($clean !== '') {
+                $pdo->prepare("UPDATE tickets SET status = 'escalating' WHERE id = ?")->execute([$ticketId]);
+                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[Second Mate] " . $clean]);
+                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[First Mate] I have been summoned. I am reviewing the logs now. Client, please provide any extra details."]);
+            }
         } 
         elseif (strpos($reply, '[TRIGGER_ADMIN]') !== false) {
-            $clean = str_replace('[TRIGGER_ADMIN]', '', $reply);
-            $pdo->prepare("UPDATE tickets SET status = 'escalated' WHERE id = ?")->execute([$ticketId]);
-            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $clean]);
-            if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "Ticket #$ticketId Escalated to Admin.");
+            $clean = trim(str_replace('[TRIGGER_ADMIN]', '', $reply));
+            if ($clean !== '') {
+                $pdo->prepare("UPDATE tickets SET status = 'escalated' WHERE id = ?")->execute([$ticketId]);
+                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $clean]);
+                if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "Ticket #$ticketId Escalated to Admin.");
+            }
         } 
         else {
-            // Standard Reply
-            $prefix = ($status === 'escalating') ? "[First Mate] " : "[Second Mate] ";
-            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $prefix . $reply]);
+            // Standard Reply - validate before insert
+            if (trim($reply) !== '') {
+                $prefix = ($status === 'escalating') ? "[First Mate] " : "[Second Mate] ";
+                $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $prefix . $reply]);
+            }
         }
 
     } catch (Exception $e) {
