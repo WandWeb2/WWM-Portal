@@ -386,12 +386,18 @@ function internalGeminiRequest($apiKey, $model, $sys, $user) {
 
 // === SYSTEM LOGGING (RESTORED) ===
 function ensureLogSchema($pdo) {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        level VARCHAR(20),
-        message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )");
+    try {
+        // Use MySQL-compatible syntax
+        $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            level VARCHAR(20),
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )");
+    } catch (Exception $e) {
+        // Silently fail if table creation has issues - DB might already exist
+        error_log("ensureLogSchema warning: " . $e->getMessage());
+    }
 }
 
 function logSystemEvent($pdo, $message, $level = 'info') {

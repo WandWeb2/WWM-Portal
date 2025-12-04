@@ -50,9 +50,14 @@ try {
 
     $pdo = getDBConnection($secrets);
     
-    // ** CRITICAL: ENSURE LOGGING TABLE EXISTS **
-    if(function_exists('ensureLogSchema')) {
-        ensureLogSchema($pdo);
+    // ** ENSURE LOGGING TABLE EXISTS (NON-FATAL) **
+    try {
+        if(function_exists('ensureLogSchema')) {
+            ensureLogSchema($pdo);
+        }
+    } catch (Exception $e) {
+        // Logging setup failure should not break the API
+        error_log("Warning: Could not initialize logging: " . $e->getMessage());
     }
 
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -168,7 +173,19 @@ try {
     }
 
 } catch (Exception $e) {
-    ob_clean(); // Clear any partial output
+    // 1. Log to Database for Admin Dashboard visibility
+    // We check if the logger exists first to avoid double-crashing
+    if (function_exists('logSystemEvent') && isset($pdo)) {
+        try {
+            logSystemEvent($pdo, 'CRASH: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), 'error');
+        } catch (Exception $logErr) {
+            // Fallback if DB is gone
+            error_log("WandWeb Fatal Logging Error: " . $logErr->getMessage());
+        }
+    }
+    
+    // 2. Clear Buffer and Return JSON
+    ob_clean(); 
     echo json_encode(['status' => 'error', 'message' => 'System Error: ' . $e->getMessage()]);
 }
 ?>
