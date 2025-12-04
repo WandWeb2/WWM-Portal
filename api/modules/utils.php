@@ -252,4 +252,20 @@ function notifyPartnerIfAssigned($pdo, $clientId, $message) {
         createNotification($pdo, $partner['partner_id'], "[Partner Alert] " . $message);
     }
 }
+
+function notifyAllAdmins($pdo, $message) {
+    // 1. Find all admins
+    $stmt = $pdo->query("SELECT id, email FROM users WHERE role = 'admin'");
+    $admins = $stmt->fetchAll();
+    
+    foreach ($admins as $admin) {
+        // Internal Notification
+        $pdo->prepare("INSERT INTO notifications (user_id, message) VALUES (?, ?)")->execute([$admin['id'], $message]);
+        
+        // Email Notification
+        $subject = "Escalation Alert: WandWeb Portal";
+        $headers = "From: noreply@wandweb.co";
+        @mail($admin['email'], $subject, $message, $headers);
+    }
+}
 ?>

@@ -1119,6 +1119,7 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const [messages, setMessages] = React.useState([]);
     const [reply, setReply] = React.useState("");
     const [isInternal, setIsInternal] = React.useState(false);
+    const [isThinking, setIsThinking] = React.useState(false);
     const scrollRef = React.useRef(null);
     const isAdmin = role === 'admin';
 
@@ -1150,6 +1151,7 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const handleSend = async (e) => {
         e.preventDefault();
         if(!reply.trim()) return;
+        setIsThinking(true);
         await window.safeFetch(API_URL, { 
             method: 'POST', 
             body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: reply, is_internal: isInternal }) 
@@ -1158,11 +1160,14 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
         // Refresh messages
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
         if(res.status==='success') setMessages(res.messages);
+        setIsThinking(false);
     };
     
     const handleClose = async () => {
+         if(!confirm("Are you sure you want to close this ticket?")) return;
          await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_ticket_status', token, ticket_id: ticket.id, status: 'closed' }) });
-         onUpdate();
+         // Force parent refresh
+         if(onUpdate) onUpdate();
     };
 
     const handleConvertToProject = () => {
@@ -1209,6 +1214,13 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         </div>
                     );
                 })}
+                {isThinking && (
+                    <div className="flex justify-start animate-pulse">
+                        <div className="bg-teal-50 border border-teal-100 text-teal-800 p-3 rounded-lg text-xs flex items-center gap-2">
+                            <window.Icons.Sparkles size={12}/> Second Mate is thinking...
+                        </div>
+                    </div>
+                )}
             </div>
 
             <form onSubmit={handleSend} className="p-4 border-t bg-white">

@@ -41,7 +41,7 @@ function ensureSupportSchema($pdo) {
 function triggerSupportAI($pdo, $secrets, $ticketId) {
     if (empty($secrets['GEMINI_API_KEY'])) return;
 
-    // 1. Fetch Context
+    // 1. Get Ticket & History
     $stmt = $pdo->prepare("SELECT * FROM tickets WHERE id = ?");
     $stmt->execute([$ticketId]);
     $ticket = $stmt->fetch();
@@ -50,25 +50,46 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     $mStmt->execute([$ticketId]);
     $history = $mStmt->fetchAll();
     
-    // Build Transcript
-    $transcript = "TICKET SUBJECT: {$ticket['subject']}\n";
+    // 2. Build Transcript
+    $transcript = "";
     foreach ($history as $h) {
-        $sender = ($h['sender_id'] == 0) ? "AI" : "CLIENT";
-        $transcript .= "$sender: {$h['message']}\n";
+        $role = ($h['sender_id'] == 0) ? "AI" : "CLIENT";
+        $transcript .= "$role: {$h['message']}\n";
     }
 
-    // 2. Define Persona based on Status
-    $isEscalated = ($ticket['status'] === 'escalated');
-    $persona = $isEscalated ? "First Mate AI" : "Second Mate AI";
+    // 3. Grounding Context (Prevent Hallucinations)
+    // We assume fetchWandWebContext exists in utils.php. If not, we pass a static fallback.
+    $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Wandering Webmaster is a web agency. Services: Web Design, Maintenance.";
     
-    $systemPrompt = "You are $persona, a support agent for Wandering Webmaster.
-PROTOCOL:
-1. Be helpful, concise, and professional.
-2. If you are Second Mate and the user seems frustrated or the issue is technical/complex, output exactly: [ESCALATE]
-3. If you are First Mate, reassure them that a human Admin is reviewing it.
-4. Do not start messages with your name.";
+    // 4. Determine Current Phase
+    // Status 'open' = Second Mate. Status 'escalating' = First Mate. Status 'escalated' = Admin.
+    $status = $ticket['status'];
+    
+    $systemPrompt = "
+CONTEXT:
+$kb
 
-    // 3. Call Gemini
+RULES:
+1. You are an AI Support Agent for WandWeb.
+2. USE ONLY the CONTEXT provided. Do not invent clients, projects (like Land Watch), or stats.
+3. If you don't know, ask the user or escalate.
+
+CURRENT PHASE: $status
+
+SCENARIO A (Status: 'open'): You are SECOND MATE.
+- Try to fix the issue using the KB.
+- If you cannot fix it, or the user is frustrated, reply: \"I see this is something we can't fix alone. Let me call in the First Mate.\" AND append tag: [TRIGGER_HANDOFF]
+
+SCENARIO B (Status: 'escalating'): You are FIRST MATE.
+- You have just been called in. Talk to BOTH Second Mate and the Client.
+- Try to resolve.
+- If you still fail, say: \"I am escalating this to the Administration team immediately.\" AND append tag: [TRIGGER_ADMIN]
+
+OUTPUT:
+Just the message text. No prefixes like 'Second Mate:'.
+";
+
+    // 5. Call Gemini
     $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . $secrets['GEMINI_API_KEY'];
     $payload = json_encode(["contents" => [["parts" => [["text" => $systemPrompt . "\n\nTRANSCRIPT:\n" . $transcript . "\n\nRESPONSE:"]]]]]);
     
@@ -82,23 +103,39 @@ PROTOCOL:
     
     $reply = $res['candidates'][0]['content']['parts'][0]['text'] ?? '';
     $reply = trim($reply);
-
     if (empty($reply)) return;
 
-    // 4. Handle Logic
-    if (strpos($reply, '[ESCALATE]') !== false) {
-        // Trigger Escalation
-        $cleanReply = str_replace('[ESCALATE]', '', $reply);
-        if (trim($cleanReply)) {
-            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[Second Mate] " . trim($cleanReply)]);
-        }
-        // Call Escalation Handler
-        handleEscalateTicket($pdo, ['token'=>'INTERNAL_OVERRIDE', 'ticket_id'=>$ticketId, 'role'=>'system']); 
-    } else {
-        // Standard Reply
-        $prefix = $isEscalated ? "[First Mate] " : "[Second Mate] ";
-        $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $prefix . $reply]);
+    // 6. Process Logic Tags
+    $nextStatus = $status;
+    $finalMsg = $reply;
+    
+    if (strpos($reply, '[TRIGGER_HANDOFF]') !== false) {
+        $finalMsg = str_replace('[TRIGGER_HANDOFF]', '', $reply);
+        $nextStatus = 'escalating'; // Move to First Mate phase
+        $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$nextStatus, $ticketId]);
+        
+        // Post Second Mate's Handoff Message
+        $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, "[Second Mate] " . $finalMsg]);
+        
+        // IMMEDIATELY Inject First Mate's Entrance
+        $fmMsg = "[First Mate] I have entered the chat. Second Mate, thank you for the report. Client, could you clarify the specific error you are seeing?";
+        $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $fmMsg]);
+        
+        return; // Done
     }
+    
+    if (strpos($reply, '[TRIGGER_ADMIN]') !== false) {
+        $finalMsg = str_replace('[TRIGGER_ADMIN]', '', $reply);
+        $nextStatus = 'escalated'; // Move to Admin phase
+        $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$nextStatus, $ticketId]);
+        
+        // Notify Admin
+        notifyAllAdmins($pdo, "Ticket #$ticketId escalated to Administration by First Mate.");
+    }
+
+    // Standard Reply (No Trigger)
+    $prefix = ($status === 'escalating') ? "[First Mate] " : "[Second Mate] ";
+    $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $prefix . $finalMsg]);
 }
 
 function handleGetTickets($pdo, $i) { 
