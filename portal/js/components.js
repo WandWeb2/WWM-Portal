@@ -342,12 +342,22 @@ window.NotificationBell = ({ token }) => {
         
         // 2. Handle Deep Linking via "Pending Navigation" Pattern
         if (n.target_type && n.target_id) {
-            const viewName = n.target_type === 'project' ? 'projects' : n.target_type + 's';
+            // Map notification types to actual View IDs
+            const viewMap = {
+                'ticket': 'support',
+                'project': 'projects',
+                'invoice': 'billing',
+                'subscription': 'billing'
+            };
+            
+            // Default to dashboard if unknown, otherwise map type or add 's' (e.g. client -> clients)
+            const viewName = viewMap[n.target_type] || (n.target_type + 's');
+            
             const navData = { view: viewName, target_id: n.target_id };
             localStorage.setItem('pending_nav', JSON.stringify(navData));
             
             // Trigger global view switch
-            window.dispatchEvent(new CustomEvent('switch_view', { detail: navData.view }));
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: viewName }));
         }
         
         setOpen(false);
