@@ -101,7 +101,6 @@ try {
         case 'delete_task': handleDeleteTask($pdo, $input); break;
         case 'toggle_task': handleToggleTask($pdo, $input); break;
         case 'post_comment': handlePostComment($pdo, $input); break;
-        case 'upload_project_file': handleUploadProjectFile($pdo, $input); break;
 
         // Billing
         case 'get_billing_overview': handleGetBilling($pdo, $input, $secrets); break;

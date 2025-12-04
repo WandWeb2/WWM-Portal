@@ -152,7 +152,7 @@ const TaskManager = ({ project, token, role, onClose }) => {
             
             const formData = new FormData();
             formData.append('file', selectedFile);
-            formData.append('action', 'upload_project_file');
+            formData.append('action', 'upload_file'); // Updated to use Drive Integration
             formData.append('token', token);
             formData.append('project_id', project.id);
             
