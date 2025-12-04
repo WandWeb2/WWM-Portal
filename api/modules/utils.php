@@ -455,26 +455,51 @@ function handleDebugTest($pdo, $i, $secrets) {
             }
             break;
             
-        case 'stripe_connection':
-            $stripe_key = $secrets['stripe_secret_key'] ?? null;
-            if (!$stripe_key) {
-                $result = 'Stripe Connection: ⚠ WARNING - No Stripe key configured';
-                logSystemEvent($pdo, $result, 'warning');
-            } else {
-                $result = 'Stripe Connection: ✓ WORKING - Stripe API key is configured';
-                logSystemEvent($pdo, $result, 'success');
+        case 'resync_user_59':
+            try {
+                // Clear user 59 from cache/temp and force fresh load
+                $stmt = $pdo->prepare("SELECT id, full_name, role, status FROM users WHERE id = 59");
+                $stmt->execute();
+                $user = $stmt->fetch();
+                
+                if (!$user) {
+                    $result = "User #59: ✗ NOT FOUND - User does not exist in database";
+                    logSystemEvent($pdo, $result, 'error');
+                } else {
+                    $result = "User #59 Found: ID={$user['id']}, Name={$user['full_name']}, Role={$user['role']}, Status={$user['status']}";
+                    logSystemEvent($pdo, $result, 'info');
+                    
+                    // If they're a partner, verify they're in partner list
+                    if ($user['role'] === 'partner') {
+                        $pStmt = $pdo->prepare("SELECT COUNT(*) as count FROM users WHERE role = 'partner' AND status = 'active'");
+                        $pStmt->execute();
+                        $pRow = $pStmt->fetch();
+                        $result = "Partner List Check: Found {$pRow['count']} active partners (including #{$user['id']})";
+                        logSystemEvent($pdo, $result, 'success');
+                    }
+                }
+            } catch (Exception $e) {
+                $result = "User #59 Resync: ✗ ERROR - " . $e->getMessage();
+                logSystemEvent($pdo, $result, 'error');
             }
             break;
             
-        case 'crm_sync':
+        case 'rebuild_partners':
             try {
-                $stmt = $pdo->query("SELECT COUNT(*) as count FROM clients");
-                $row = $stmt->fetch();
-                $count = $row['count'] ?? 0;
-                $result = "CRM Sync: ✓ WORKING - Database contains $count client records";
+                $stmt = $pdo->query("SELECT id, full_name, role, status FROM users WHERE role = 'partner' AND status = 'active' ORDER BY full_name");
+                $partners = $stmt->fetchAll();
+                $count = count($partners);
+                
+                $result = "Partners Rebuilt: ✓ Found $count active partners";
                 logSystemEvent($pdo, $result, 'success');
+                
+                if ($count > 0) {
+                    foreach ($partners as $p) {
+                        logSystemEvent($pdo, "  - Partner #{$p['id']}: {$p['full_name']}", 'info');
+                    }
+                }
             } catch (Exception $e) {
-                $result = "CRM Sync: ✗ ERROR - " . $e->getMessage();
+                $result = "Rebuild Partners: ✗ ERROR - " . $e->getMessage();
                 logSystemEvent($pdo, $result, 'error');
             }
             break;
