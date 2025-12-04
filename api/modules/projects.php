@@ -50,6 +50,7 @@ function ensureProjectSchema($pdo) {
     // Self-repair: add missing columns
     try { $pdo->exec("ALTER TABLE projects ADD COLUMN manager_id INT DEFAULT 0"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE shared_files ADD COLUMN project_id INT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE shared_files ADD COLUMN external_url TEXT"); } catch (Exception $e) {}
 }
 
 function recalcProjectHealth($pdo, $pid) {
