@@ -79,7 +79,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         $systemPrompt = "CONTEXT: $kb\nCURRENT PHASE: $status\n\nINSTRUCTIONS:\n1. You are Second Mate AI (if Open) or First Mate AI (if Escalating).\n2. Be helpful and brief.\n3. If you cannot solve it, output: [TRIGGER_HANDOFF] or [TRIGGER_ADMIN].\n4. DO NOT start response with your name.";
 
         // 3. API Call with Timeout
-        $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . $secrets['GEMINI_API_KEY'];
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" . $secrets['GEMINI_API_KEY'];
         $payload = json_encode(["contents" => [["parts" => [["text" => $systemPrompt . "\n\nTRANSCRIPT:\n" . $transcript . "\n\nRESPONSE:"]]]]]);
 
         $ch = curl_init($url);
@@ -322,7 +322,7 @@ function handleSuggestSolution($i, $s) {
     $context = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "";
     $query = $i['subject'];
     $prompt = "Context: $context. User Subject: '$query'. Answer in 1 sentence + link or 'NO_MATCH'.";
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" . $s['GEMINI_API_KEY'];
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" . $s['GEMINI_API_KEY'];
     $ch = curl_init($url); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["contents" => [["parts" => [["text" => $prompt]]]]])); curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
     $res = json_decode(curl_exec($ch), true); curl_close($ch);
     $text = $res['candidates'][0]['content']['parts'][0]['text'] ?? 'NO_MATCH';

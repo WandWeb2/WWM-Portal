@@ -170,7 +170,7 @@ function handleAI($i, $s) {
     $user = verifyAuth($i);
     if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'AI', ['text' => 'Config Error: API Key missing.']);
 
-    $model = "gemini-2.0-flash";
+    $model = "gemini-1.5-flash";
     $url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=" . $s['GEMINI_API_KEY'];
     
     $websiteContext = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Website data unavailable.";
@@ -208,7 +208,13 @@ function handleAI($i, $s) {
     curl_close($ch);
     
     $d = json_decode($response, true);
-    $text = $d['candidates'][0]['content']['parts'][0]['text'] ?? 'System offline.';
+    
+    // Improved Error Handling to catch "System Offline" causes
+    if (!empty($d['error'])) {
+        $text = "AI Error: " . ($d['error']['message'] ?? 'Unknown API Error');
+    } else {
+        $text = $d['candidates'][0]['content']['parts'][0]['text'] ?? 'System offline (No candidates returned).';
+    }
 
     // Detect actionable ticket tag appended by the Executive Assistant persona.
     if (stripos($text, '[ACTION:OPEN_TICKET]') !== false) {
