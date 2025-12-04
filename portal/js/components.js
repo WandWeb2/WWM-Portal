@@ -56,36 +56,68 @@ window.Icons = {
 };
 
 // Global typing simulation utility for AI messages
-window.simulateTyping = (messages, delay = 50, callback) => {
+// Global typing simulation utility for AI messages
+window.simulateTyping = (messages, defaultDelay = 50, callback) => {
     if (!Array.isArray(messages) || messages.length === 0) {
         if (typeof callback === 'function') callback();
         return;
     }
-    let i = 0;
-    let char = 0;
-    // announce first message
+    
+    let msgIndex = 0;
+    let charIndex = 0;
+    
+    // Announce first message immediately
     window.dispatchEvent(new CustomEvent('new_ai_msg', { detail: messages[0] }));
-    const timer = setInterval(() => {
-        if (i >= messages.length) {
-            clearInterval(timer);
+    
+    const typeNextChar = () => {
+        // Safety check
+        if (msgIndex >= messages.length) {
             if (typeof callback === 'function') callback();
             return;
         }
-        const full = messages[i].message || '';
-        if (char < full.length) {
-            const partial = full.substring(0, char + 1);
-            window.dispatchEvent(new CustomEvent('new_ai_char', { detail: { id: messages[i].id, text: partial } }));
-            char++;
+
+        const currentMsg = messages[msgIndex];
+        const fullText = currentMsg.message || '';
+
+        // Typing logic
+        if (charIndex < fullText.length) {
+            const partial = fullText.substring(0, charIndex + 1);
+            window.dispatchEvent(new CustomEvent('new_ai_char', { detail: { id: currentMsg.id, text: partial } }));
+            charIndex++;
+            setTimeout(typeNextChar, defaultDelay);
         } else {
-            i++;
-            char = 0;
-            if (i < messages.length) {
+            // Message Complete - Move to next
+            msgIndex++;
+            charIndex = 0;
+
+            if (msgIndex < messages.length) {
+                const nextMsg = messages[msgIndex];
+                
+                // THEATRICAL PAUSE LOGIC
+                // If previous was Second Mate/System and next is First Mate, wait longer (3s)
+                // Otherwise, standard pause (0.8s)
+                let pauseDuration = 800; 
+                
+                const prevText = currentMsg.message || '';
+                if (
+                    (prevText.includes('[Second Mate]') || prevText.includes('First Mate')) && 
+                    (nextMsg.message.includes('[First Mate]'))
+                ) {
+                    pauseDuration = 3500; // Dramatic "Summoning" pause
+                }
+
                 setTimeout(() => {
-                    window.dispatchEvent(new CustomEvent('new_ai_msg', { detail: messages[i] }));
-                }, 500);
+                    window.dispatchEvent(new CustomEvent('new_ai_msg', { detail: nextMsg }));
+                    typeNextChar();
+                }, pauseDuration);
+            } else {
+                if (typeof callback === 'function') callback();
             }
         }
-    }, delay);
+    };
+
+    // Start the loop
+    typeNextChar();
 };
 
 // 3. Error Boundary

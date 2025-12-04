@@ -232,20 +232,34 @@ function handleCreateTicket($pdo, $i, $s) {
 function handleReplyTicket($pdo, $i, $s) { 
     $u = verifyAuth($i); 
     $tid = (int)$i['ticket_id']; 
+
+    // 1. STRICT LOCK: Check status before allowing reply
+    $statusCheck = $pdo->prepare("SELECT status FROM tickets WHERE id = ?");
+    $statusCheck->execute([$tid]);
+    $currentStatus = $statusCheck->fetchColumn();
+
+    if ($currentStatus === 'closed') {
+        sendJson('error', 'This ticket is closed. Replies are disabled.');
+    }
+
     $isInternal = ($u['role'] === 'admin' && !empty($i['is_internal'])) ? 1 : 0; 
+    
+    // 2. Insert Message
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message, is_internal) VALUES (?, ?, ?, ?)"); 
     $stmt->execute([$tid, $u['uid'], strip_tags($i['message']), $isInternal]); 
+    
+    // 3. Update Ticket Status
     $newStatus = ($u['role'] === 'admin') ? 'waiting_client' : 'open'; 
-    if ($isInternal) $newStatus = 'open'; 
+    if ($isInternal) $newStatus = 'open'; // Internal notes don't change status
+    
     $pdo->prepare("UPDATE tickets SET updated_at = NOW(), status = ? WHERE id = ?")->execute([$newStatus, $tid]); 
     
-    // Trigger AI and notify partner if client replied
+    // 4. Trigger AI / Notifications
     if ($u['role'] === 'client') {
         triggerSupportAI($pdo, $s, $tid);
         notifyPartnerIfAssigned($pdo, $u['uid'], "Client replied to #$tid");
     }
     
-    // If Admin/Partner replied, notify the Client
     if ($u['role'] === 'admin' || $u['role'] === 'partner') {
         $stmt = $pdo->prepare("SELECT user_id FROM tickets WHERE id = ?");
         $stmt->execute([$tid]);
@@ -255,7 +269,12 @@ function handleReplyTicket($pdo, $i, $s) {
         }
     }
     
-    sendJson('success', 'Reply Sent'); 
+    // 5. Fetch Final Status (In case AI auto-closed or escalated it immediately)
+    $finalStatusStmt = $pdo->prepare("SELECT status FROM tickets WHERE id = ?");
+    $finalStatusStmt->execute([$tid]);
+    $finalStatus = $finalStatusStmt->fetchColumn();
+    
+    sendJson('success', 'Reply Sent', ['new_status' => $finalStatus]); 
 }
 
 function handleUpdateTicketStatus($pdo, $i) {

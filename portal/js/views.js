@@ -1539,16 +1539,44 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                 body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: textToSend, is_internal: isInternal }) 
             });
 
-            if (sendRes.status !== 'success') throw new Error(sendRes.message || "Failed to send");
+            if (sendRes.status !== 'success') {
+                // Handle "Ticket Closed" error specifically
+                if (sendRes.message.includes('closed')) {
+                    alert("Unable to reply: " + sendRes.message);
+                    if(onUpdate) onUpdate(); // Refresh parent to show closed state
+                    return;
+                }
+                throw new Error(sendRes.message || "Failed to send");
+            }
 
-            // 3. Refresh Thread
+            // 3. IMMEDIATE STATUS UPDATE (Lock UI if AI/Logic closed it)
+            if (sendRes.new_status && sendRes.new_status !== ticket.status) {
+                // Mutate the local ticket object prop to reflect new status immediately
+                ticket.status = sendRes.new_status;
+                if (onUpdate) onUpdate(); // Tell parent to refresh list
+            }
+
+            // 4. Refresh Thread
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
             if(res.status==='success') {
-                setMessages(res.messages);
+                // Filter out the temp message we added, replace with real data
+                // Note: simulateTyping will handle new AI messages
+                const newMsgs = res.messages;
+                
+                // Find messages that are NEW (ID is greater than last known real message)
+                const lastRealMsg = messages.filter(m => m.id !== tempId).pop();
+                const freshMessages = lastRealMsg 
+                    ? newMsgs.filter(m => m.id > lastRealMsg.id && m.sender_id == 0) 
+                    : [];
+
+                setMessages(newMsgs);
+                
+                if(freshMessages.length > 0) {
+                    window.simulateTyping(freshMessages);
+                }
             }
         } catch (err) {
             console.error(err);
-            // Remove optimistic message or show error
             setMessages(prev => prev.filter(m => m.id !== tempId));
             alert("Error sending message: " + err.message);
         } finally {
