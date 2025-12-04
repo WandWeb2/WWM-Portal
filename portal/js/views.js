@@ -563,6 +563,19 @@ window.SettingsView = ({ token, role }) => {
 
     if (role !== 'admin') return <div className="p-10 text-center text-slate-500">Access Restricted</div>;
 
+    // Auto-navigate to partners tab if user was just fixed
+    React.useEffect(() => {
+        const fixed = sessionStorage.getItem('_justFixedUser');
+        if (fixed) {
+            setActiveTab('partners');
+            sessionStorage.removeItem('_justFixedUser');
+            setTimeout(() => {
+                const msg = JSON.parse(fixed);
+                alert(`✓ User #${msg.id} is now a ${msg.role.toUpperCase()}. Check Partners tab.`);
+            }, 100);
+        }
+    }, []);
+
     React.useEffect(() => {
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'partners') fetchPartners();
@@ -618,8 +631,10 @@ window.SettingsView = ({ token, role }) => {
         
         if (res.status === 'success') { 
             alert("Account recovered successfully. Reloading to apply changes...");
+            // Store the target role/status so we can verify after reload
+            sessionStorage.setItem('_justFixedUser', JSON.stringify({id: userId, role, status, timestamp: Date.now()}));
             // Force hard reload to ensure all lists (Partners/Clients) are rebuilt from scratch
-            window.location.reload(); 
+            setTimeout(() => window.location.reload(), 100); 
         } else {
             alert("Error: " + (res.message || 'Action failed'));
             btn.innerText = originalText;
