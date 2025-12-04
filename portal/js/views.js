@@ -8,6 +8,18 @@ console.log("Views.js v30.1 - Force Loaded"); // Debugging confirmation
 const API_URL = '/api/portal_api.php'; 
 const LOGO_URL = "https://wandweb.co/wp-content/uploads/2025/11/WEBP-LQ-Logo-with-text-mid-White.webp";
 
+// Global helper: make URLs clickable and preserve formatting
+window.formatTextWithLinks = (text) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => 
+        urlRegex.test(part) ? 
+        <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-200 underline hover:text-white break-all">{part}</a> 
+        : part
+    );
+};
+
 // --- HELPERS ---
 const arrayMove = (arr, from, to) => { 
     const res = Array.from(arr); 
@@ -1151,13 +1163,28 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const handleSend = async (e) => {
         e.preventDefault();
         if(!reply.trim()) return;
+        
+        const textToSend = reply;
+        setReply(""); // Clear input immediately
+        
+        // 1. Optimistic Update (Show immediately)
+        const tempMsg = {
+            id: 'temp-' + Date.now(),
+            role: role, // Matches current user role for alignment
+            sender_id: 99999, // Temporary ID to force "User" alignment
+            message: textToSend,
+            created_at: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, tempMsg]);
         setIsThinking(true);
+
+        // 2. Send to Server
         await window.safeFetch(API_URL, { 
             method: 'POST', 
-            body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: reply, is_internal: isInternal }) 
+            body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: textToSend, is_internal: isInternal }) 
         });
-        setReply("");
-        // Refresh messages
+
+        // 3. Refresh Thread (Get AI response)
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
         if(res.status==='success') setMessages(res.messages);
         setIsThinking(false);
@@ -1208,7 +1235,11 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         <div key={m.id} className={`flex ${align}`}>
                             <div className={`max-w-[80%] p-3 rounded-lg text-sm shadow-sm ${bubbleColor}`}>
                                 {isInternalMsg && <div className="text-[10px] font-bold uppercase mb-1 opacity-50">Internal Note</div>}
-                                {m.typing ? (<span>{m.message}<span className="inline-block w-3 h-4 bg-slate-200 animate-pulse align-text-bottom"/></span>) : m.message}
+                                {m.typing ? (
+                                    <span>{m.message}<span className="inline-block w-3 h-4 bg-slate-200 animate-pulse align-text-bottom"/></span>
+                                ) : (
+                                    <span className="whitespace-pre-wrap block">{window.formatTextWithLinks(m.message)}</span>
+                                )}
                                 <div className="text-[10px] mt-1 opacity-60 text-right">{new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                             </div>
                         </div>
