@@ -202,7 +202,14 @@ function handleImportStripeClients($pdo, $input, $secrets) { set_time_limit(300)
 function handleGetSettings($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); ensureSettingsSchema($pdo); $stmt = $pdo->query("SELECT setting_key, setting_value FROM settings"); $settings = []; while ($row = $stmt->fetch()) { $settings[$row['setting_key']] = $row['setting_value']; } sendJson('success', 'Settings loaded', ['settings' => $settings]); }
 function handleUpdateSettings($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); ensureSettingsSchema($pdo); foreach ($i['settings'] ?? [] as $key => $value) { $stmt = $pdo->prepare("REPLACE INTO settings (setting_key, setting_value) VALUES (?, ?)"); $stmt->execute([$key, $value]); } sendJson('success', 'Settings saved'); }
 function handleGetMyProfile($pdo, $input) { $u = verifyAuth($input); $stmt = $pdo->prepare("SELECT full_name, business_name, email, phone, website, address, position FROM users WHERE id = ?"); $stmt->execute([$u['uid']]); sendJson('success', 'Profile Loaded', ['profile' => $stmt->fetch()]); }
-function handleGetPartners($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); ensureUserSchema($pdo); $s = $pdo->query("SELECT id, full_name, email, phone, created_at FROM users WHERE role = 'partner' ORDER BY full_name ASC"); sendJson('success', 'Partners fetched', ['partners' => $s->fetchAll()]); }
+function handleGetPartners($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    ensureUserSchema($pdo);
+    // Trim and lower check to be safe
+    $s = $pdo->query("SELECT id, full_name, email, phone, created_at FROM users WHERE TRIM(LOWER(role)) = 'partner' ORDER BY full_name ASC");
+    sendJson('success', 'Partners fetched', ['partners' => $s->fetchAll()]);
+}
 function handleAssignPartner($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); ensurePartnerSchema($pdo); $partnerId = (int)($i['partner_id'] ?? 0); $clientId = (int)($i['client_id'] ?? 0); if (!$partnerId || !$clientId) sendJson('error', 'Invalid IDs'); try { $pdo->prepare("INSERT INTO partner_assignments (partner_id, client_id) VALUES (?, ?)")->execute([$partnerId, $clientId]); } catch (Exception $e) { } $c = $pdo->prepare("SELECT full_name FROM users WHERE id = ?"); $c->execute([$clientId]); $client = $c->fetch(); if ($client) { createNotification($pdo, $partnerId, "You have been assigned to client: " . ($client['full_name'] ?? 'New Client')); } sendJson('success', 'Partner assigned'); }
 function handleUnassignPartner($pdo, $i) { $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized'); ensurePartnerSchema($pdo); $partnerId = (int)($i['partner_id'] ?? 0); $clientId = (int)($i['client_id'] ?? 0); $pdo->prepare("DELETE FROM partner_assignments WHERE partner_id = ? AND client_id = ?")->execute([$partnerId, $clientId]); sendJson('success', 'Partner unassigned'); }
 ?>

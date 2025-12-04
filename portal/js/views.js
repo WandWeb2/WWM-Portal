@@ -601,21 +601,31 @@ window.SettingsView = ({ token, role }) => {
     };
     
     const handleForceFix = async (userId, role, status) => {
+        const btn = document.activeElement;
+        const originalText = btn.innerText;
+        btn.innerText = "...";
+        btn.disabled = true;
+
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'fix_user_account', token, target_user_id: userId, role, status }) });
+        
+        btn.innerText = originalText;
+        btn.disabled = false;
+
         if (res.status === 'success') { 
-            alert("Recovered! User is now a " + role);
-            fetchAudit();
-            // Also refresh partners tab if the user was made a partner
+            // 1. Refresh the Audit list immediately to show the change there
+            await fetchAudit();
+            
+            // 2. If we made them a partner, switch tabs and force a reload
             if (role === 'partner') {
-                // Add small delay to ensure DB commit
-                setTimeout(async () => {
-                    await fetchPartners();
-                    // Switch to partners tab to show the newly recovered partner
-                    setActiveTab('partners');
-                }, 500);
+                alert("Success! Switching to Partner list...");
+                setPartners([]); // Clear list to force visual refresh
+                setActiveTab('partners'); 
+                // The useEffect will catch the tab change and fetch fresh data
+            } else {
+                alert("Account updated successfully.");
             }
         } else {
-            alert("Error: " + (res.message || 'Failed to recover account'));
+            alert("Error: " + (res.message || 'Action failed'));
         }
     };
 
