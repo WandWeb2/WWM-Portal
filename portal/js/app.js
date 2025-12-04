@@ -122,17 +122,25 @@ const App = () => {
         const switchHandler = (e) => {
             if(e.detail) setView(e.detail);
         };
-        window.addEventListener('switch_view', switchHandler);
         const handleModal = (e) => setProjectModalData(e.detail);
+        window.addEventListener('switch_view', switchHandler);
         window.addEventListener('open_project_modal', handleModal);
-        return () => window.removeEventListener('switch_view', switchHandler);
+        return () => {
+            window.removeEventListener('switch_view', switchHandler);
+            window.removeEventListener('open_project_modal', handleModal);
+        };
     }, []);
 
+    // Handle pending navigation after view changes
     React.useEffect(() => {
-        const handleModal = (e) => setProjectModalData(e.detail);
-        window.addEventListener('open_project_modal', handleModal);
-        return () => window.removeEventListener('open_project_modal', handleModal);
-    }, []);
+        const pendingNav = localStorage.getItem('pending_nav');
+        if (pendingNav && view === 'support') {
+            const nav = JSON.parse(pendingNav);
+            // Dispatch event to SupportView to handle the navigation
+            window.dispatchEvent(new CustomEvent('handle_pending_nav', { detail: nav }));
+            localStorage.removeItem('pending_nav');
+        }
+    }, [view]);
 
     // --- ROUTING ---
     if (inviteToken) { 

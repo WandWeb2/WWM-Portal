@@ -1280,11 +1280,29 @@ window.SupportView = ({ token, role }) => {
                 }
             }
         };
+        
+        const handlePendingNav = (e) => {
+            if (tickets.length === 0) return;
+            const nav = e.detail;
+            if(nav && nav.target_id) {
+                const target = tickets.find(t => t.id == nav.target_id);
+                if(target) { 
+                    setActiveTicket(target); 
+                    localStorage.removeItem('pending_nav'); 
+                }
+            }
+        };
+        
         // Run on mount/update
         handleDeepLink();
         // Listen for global view switches
         window.addEventListener('switch_view', handleDeepLink);
-        return () => window.removeEventListener('switch_view', handleDeepLink);
+        // Listen for pending nav events
+        window.addEventListener('handle_pending_nav', handlePendingNav);
+        return () => {
+            window.removeEventListener('switch_view', handleDeepLink);
+            window.removeEventListener('handle_pending_nav', handlePendingNav);
+        };
     }, [tickets]);
 
     if (loading) return <div className="p-8 text-center"><Icons.Loader/></div>;
