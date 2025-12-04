@@ -1,9 +1,9 @@
 <?php
 /* =============================================================================
-   WandWeb Portal API - Router with Safety Buffer
+   WandWeb Portal API - Router (v33.2)
    ============================================================================= */
 
-// 1. START BUFFERING (Captures any stray errors/warnings)
+// 1. START BUFFERING
 ob_start();
 
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING);
@@ -17,12 +17,12 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-W
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit(); }
 
-// 3. SHUTDOWN FUNCTION (Catches Fatal Errors)
+// 3. SHUTDOWN FUNCTION
 register_shutdown_function(function() {
     $error = error_get_last();
-    if ($error && ($error['type'] === E_ERROR || $error['type'] === E_PARSE || $error['type'] === E_COMPILE_ERROR)) {
-        ob_clean(); // Clear broken HTML
-        echo json_encode(['status' => 'error', 'message' => "Critical Server Error: " . $error['message'] . " on line " . $error['line']]);
+    if ($error && ($error['type'] === E_ERROR || $error['type'] === E_PARSE)) {
+        ob_clean(); 
+        echo json_encode(['status' => 'error', 'message' => "Critical Server Error: " . $error['message']]);
         exit();
     }
 });
@@ -49,6 +49,12 @@ try {
     require_once __DIR__ . '/modules/files.php';
 
     $pdo = getDBConnection($secrets);
+    
+    // ** CRITICAL: ENSURE LOGGING TABLE EXISTS **
+    if(function_exists('ensureLogSchema')) {
+        ensureLogSchema($pdo);
+    }
+
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
     
     // Handle both JSON and FormData (for file uploads)
@@ -148,13 +154,12 @@ try {
         // Settings
         case 'get_settings': handleGetSettings($pdo, $input); break;
         case 'update_settings': handleUpdateSettings($pdo, $input); break;
-        case 'get_system_logs': handleGetSystemLogs($pdo, $input); break;
 
-        // Recovery & Partner Tools
+        // Recovery & Logs (CRITICAL)
         case 'get_all_users': handleGetAllUsers($pdo, $input); break;
         case 'fix_user_account': handleFixUserAccount($pdo, $input, $secrets); break;
         case 'get_partner_dashboard': handleGetPartnerDashboard($pdo, $input); break;
-        case 'get_system_logs': handleGetSystemLogs($pdo, $input); break;
+        case 'get_system_logs': handleGetSystemLogs($pdo, $input); break; // Fixed
 
         default: 
             ob_clean();

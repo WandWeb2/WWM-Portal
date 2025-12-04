@@ -1,6 +1,6 @@
 <?php
 // /api/modules/clients.php
-// Version: 33.1 - Robust Recovery & Broad Partner Search
+// Version: 33.2 - Fixed Logic for 'No Rows Updated'
 
 // [HELPER] Sync local user data to Stripe & CRM
 function syncClientToExternal($pdo, $uid, $secrets) {
@@ -40,6 +40,7 @@ function handleGetAllUsers($pdo, $i) {
 }
 
 // [RECOVERY] Force Fix Account (Smart Logic)
+// [FIXED RECOVERY FUNCTION]
 function handleFixUserAccount($pdo, $i, $s) {
     $u = verifyAuth($i);
     if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
@@ -48,24 +49,30 @@ function handleFixUserAccount($pdo, $i, $s) {
     $role = strtolower(trim($i['role'])); 
     $status = $i['status'];
     
-    if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Force Update User #$uid -> $role / $status", 'warning');
+    if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Attempting fix for User #$uid -> $role / $status", 'warning');
 
     try {
-        // 1. Check Existence
+        // 1. Verify User Exists FIRST
         $check = $pdo->prepare("SELECT id FROM users WHERE id = ?");
         $check->execute([$uid]);
-        if (!$check->fetch()) sendJson('error', 'User ID not found in DB');
+        if (!$check->fetch()) {
+            sendJson('error', "User ID #$uid does not exist in database.");
+        }
 
-        // 2. Perform Update
+        // 2. Update (Ignore rowCount)
         $stmt = $pdo->prepare("UPDATE users SET role = ?, status = ? WHERE id = ?");
         $stmt->execute([$role, $status, $uid]);
         
-        // 3. Always Success (Even if rowCount is 0, it means they are already correct)
+        // 3. Always report success if we didn't crash
+        if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Fix Applied for User #$uid", 'success');
+        
+        // 4. Sync
         syncClientToExternal($pdo, $uid, $s);
-        sendJson('success', 'Account Verified & Synced');
+        
+        sendJson('success', 'Account Role Updated');
 
     } catch (Exception $e) {
-        if(function_exists('logSystemEvent')) logSystemEvent($pdo, "DB Error: " . $e->getMessage(), 'error');
+        if(function_exists('logSystemEvent')) logSystemEvent($pdo, "DB Crash: " . $e->getMessage(), 'error');
         sendJson('error', 'Database Error: ' . $e->getMessage());
     }
 }
