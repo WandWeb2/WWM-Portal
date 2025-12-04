@@ -262,8 +262,14 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin', title })
                     body: JSON.stringify({ action: 'ai_request', token, prompt, data_context: dataContext }) 
                 }); 
                 
-                if (res.status === 'success' && res.text) setInsight(res.text);
-            } catch (e) { setInsight("System Ready."); } 
+                if (res && res.status === 'success' && res.text) {
+                    setInsight(res.text);
+                } else {
+                    setInsight("System Ready."); // Unstick if API fails
+                }
+            } catch (e) { 
+                setInsight("System Ready."); // Unstick on network error
+            } 
         }; 
         generateInsight(); 
     }, [stats, projects, token]);

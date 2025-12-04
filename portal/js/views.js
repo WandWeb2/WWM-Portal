@@ -603,29 +603,17 @@ window.SettingsView = ({ token, role }) => {
     const handleForceFix = async (userId, role, status) => {
         const btn = document.activeElement;
         const originalText = btn.innerText;
-        btn.innerText = "...";
-        btn.disabled = true;
+        btn.innerText = "..."; btn.disabled = true;
 
         const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'fix_user_account', token, target_user_id: userId, role, status }) });
         
-        btn.innerText = originalText;
-        btn.disabled = false;
-
         if (res.status === 'success') { 
-            // 1. Refresh the Audit list immediately to show the change there
-            await fetchAudit();
-            
-            // 2. If we made them a partner, switch tabs and force a reload
-            if (role === 'partner') {
-                alert("Success! Switching to Partner list...");
-                setPartners([]); // Clear list to force visual refresh
-                setActiveTab('partners'); 
-                // The useEffect will catch the tab change and fetch fresh data
-            } else {
-                alert("Account updated successfully.");
-            }
+            alert("Success! Account recovered.");
+            // Force reload to ensure all lists and caches are 100% fresh
+            window.location.reload(); 
         } else {
             alert("Error: " + (res.message || 'Action failed'));
+            btn.innerText = originalText; btn.disabled = false;
         }
     };
 
