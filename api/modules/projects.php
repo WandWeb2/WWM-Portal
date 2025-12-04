@@ -51,6 +51,8 @@ function ensureProjectSchema($pdo) {
     try { $pdo->exec("ALTER TABLE projects ADD COLUMN manager_id INT DEFAULT 0"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE shared_files ADD COLUMN project_id INT DEFAULT 0"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE shared_files ADD COLUMN external_url TEXT"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE shared_files ADD COLUMN file_type VARCHAR(50)"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE shared_files ADD COLUMN filesize VARCHAR(50)"); } catch (Exception $e) {}
 }
 
 function recalcProjectHealth($pdo, $pid) {
