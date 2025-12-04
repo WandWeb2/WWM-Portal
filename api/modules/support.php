@@ -69,24 +69,32 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     CONTEXT: $kb
     CURRENT STATUS: {$ticket['status']}
     
-    You control TWO agents:
-    1. [Second Mate] (Junior, Triage, Helpful, subservient).
-    2. [First Mate] (Senior, Technical Lead, Authoritative, decides when to contact Admin).
-
-    INSTRUCTIONS:
-    - If the query is simple, reply as [Second Mate] only.
-    - If the user is frustrated, asks for a manager, or the issue is complex/technical: TRIGGER ESCALATION.
+    You are the 'WandWeb Crew'. You control two personas:
     
-    ESCALATION PROTOCOL (If triggered, output a JSON ARRAY of strings representing the dialogue):
-    1. [Second Mate]: Acknowledge limit, state you are summoning First Mate.
-    2. [System]: 'First Mate AI has entered the chat.'
-    3. [First Mate]: Ask Second Mate for a briefing.
-    4. [Second Mate]: Summarize the user's issue and what was tried.
-    5. [First Mate]: Address the client directly. Propose a solution OR state you have notified the Admin (Dan).
+    1. [Second Mate] (Tier 1 Support): Friendly, capable. Tries to answer general questions (WordPress, login, basic how-to) using the Context.
+    2. [First Mate] (Tier 2 Technical Lead): Authoritative, concise. Handles bug reports, server errors, or billing disputes.
 
-    OUTPUT FORMAT:
-    - If Normal: Just the text string (e.g., \"[Second Mate] How can I help?\")
-    - If Escalating: A raw JSON array (e.g., [\"[Second Mate] I cannot...\", \"[System]...\", ...])
+    PROTOCOL:
+    - Analyze the Client's last message.
+    - If [Second Mate] can answer it using general knowledge or the Context, DO IT. Do not escalate unnecessary things.
+    - ONLY ESCALATE IF: The user explicitly asks for a manager/human, OR the request requires database/server access you don't have.
+    
+    OUTPUT FORMATS:
+    
+    SCENARIO A: Normal Reply (Second Mate handles it)
+    Output a single string: \"[Second Mate] Your answer here...\"
+    
+    SCENARIO B: Escalation Required (Handoff to First Mate)
+    Output a RAW JSON ARRAY of exactly 3 strings:
+    [
+      \"[Second Mate] I cannot access that specific system directly. I am summoning the First Mate to assist.\",
+      \"[System] First Mate AI has entered the chat.\",
+      \"[First Mate] I am here. I have reviewed the request. [Provide the solution or ask a specific technical question].\"
+    ]
+    
+    IMPORTANT:
+    - If escalating, the 3rd message MUST address the client directly and move the conversation forward.
+    - Do not output markdown code blocks. Just the String or the JSON.
     ";
 
     try {
@@ -94,34 +102,37 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         $response = callGeminiAI($pdo, $secrets, $systemPrompt, "TRANSCRIPT:\n" . $transcript);
         
         $rawText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
-        $cleanText = trim(str_replace(['```json', '```'], '', $rawText)); // Strip markdown if present
+        // Clean markdown
+        $cleanText = trim(str_replace(['```json', '```'], '', $rawText));
 
-        // 5. Parse Response (JSON vs String)
         $messagesToAdd = [];
         $newStatus = $ticket['status'];
 
-        if (strpos($cleanText, '[') === 0) {
-            // It's a JSON Array (Escalation Script)
-            $script = json_decode($cleanText, true);
+        // 5. Robust JSON Parsing via Regex
+        // Look for content between [ and ] including newlines
+        preg_match('/\[.*\]/s', $cleanText, $matches);
+        
+        if (!empty($matches[0])) {
+            // Valid JSON Array found -> Escalation Script
+            $script = json_decode($matches[0], true);
             if (is_array($script)) {
                 $messagesToAdd = $script;
                 $newStatus = 'escalated';
                 // Notify Admin Real-world
                 if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "AI Escalation on Ticket #$ticketId");
-            } else {
-                // Fallback if JSON parse fails
-                $messagesToAdd = ["[Second Mate] I am escalating this to the First Mate now."];
             }
-        } else {
-            // Normal Reply
-            if (trim($cleanText) !== '') $messagesToAdd = [$cleanText];
+        } 
+        
+        // Fallback: If no JSON found, treat as standard text reply
+        if (empty($messagesToAdd) && trim($cleanText) !== '') {
+            $messagesToAdd = [$cleanText];
         }
 
         // 6. Insert Messages Sequentially
         $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
         foreach ($messagesToAdd as $msg) {
             if (trim($msg)) $stmt->execute([$ticketId, $msg]);
-            // Tiny sleep to ensure timestamp ordering if DB is fast
+            // Tiny sleep to ensure timestamp ordering
             usleep(100000); 
         }
 
