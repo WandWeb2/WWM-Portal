@@ -33,6 +33,18 @@ register_shutdown_function(function() {
     }
 });
 
+// Capture all PHP warnings/notices to the fatal log for debugging production 500s
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    $entry = [
+        'type' => $errno,
+        'message' => $errstr,
+        'file' => $errfile,
+        'line' => $errline
+    ];
+    error_log("[PHP ERROR] " . json_encode($entry) . "\n", 3, '/tmp/wandweb_api_fatal.log');
+    return false; // allow normal handling too
+});
+
 try {
     // 4. LOAD CONFIG
     $possible_paths = [

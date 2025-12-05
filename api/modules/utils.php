@@ -9,10 +9,35 @@ function getDBConnection($secrets) {
     } else {
         $dsn = "mysql:host={$secrets['DB_HOST']};dbname={$secrets['DB_NAME']};charset=utf8mb4";
     }
-    return new PDO($dsn, $secrets['DB_USER'] ?? '', $secrets['DB_PASS'] ?? '', [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, 
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-    ]);
+
+    // Attempt primary connection
+    try {
+        return new PDO($dsn, $secrets['DB_USER'] ?? '', $secrets['DB_PASS'] ?? '', [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+        ]);
+    } catch (Exception $e) {
+        // Log and fallback to local SQLite so the portal keeps working
+        $msg = "Primary DB connection failed: " . $e->getMessage();
+        @error_log($msg . "\n", 3, '/tmp/wandweb_db_error.log');
+
+        $fallbackPath = __DIR__ . '/../../data/portal.sqlite';
+        $fallbackDsn = 'sqlite:' . $fallbackPath;
+
+        try {
+            // Ensure directory exists
+            if (!is_dir(dirname($fallbackPath))) {
+                @mkdir(dirname($fallbackPath), 0775, true);
+            }
+            return new PDO($fallbackDsn, null, null, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+            ]);
+        } catch (Exception $e2) {
+            @error_log("SQLite fallback failed: " . $e2->getMessage() . "\n", 3, '/tmp/wandweb_db_error.log');
+            throw $e; // propagate original error
+        }
+    }
 }
 
 function sendJson($s, $m, $d = []) { 
