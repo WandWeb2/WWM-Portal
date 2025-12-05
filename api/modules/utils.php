@@ -34,8 +34,16 @@ function getDBConnection($secrets) {
 
 // --- SQL POLYFILL (Fixes the Crash) ---
 
+// =============================================================================
+// Wandering Webmaster Custom Component
+// Version: 32.1 - Critical DB Driver Fix
+// =============================================================================
+
 function getSqlType($pdo, $type) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    // 1. Get driver and force lowercase to ensure accurate detection
+    // Some environments return 'SQLITE' or 'sqlite' randomly
+    $rawDriver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    $driver = strtolower($rawDriver); 
     
     if ($type === 'serial') {
         return ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
