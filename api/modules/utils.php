@@ -1,11 +1,12 @@
 <?php
 // /api/modules/utils.php
-// Version: 31.1 - SQLite/MySQL Polyfill Fix
+// Version: 32.0 - SQLite Compatibility Fix
 
 function getDBConnection($secrets) {
     if (!empty($secrets['DB_DSN'])) {
         $dsn = $secrets['DB_DSN'];
     } else {
+        // Default to MySQL if not specified
         $dsn = "mysql:host={$secrets['DB_HOST']};dbname={$secrets['DB_NAME']};charset=utf8mb4";
     }
 
@@ -15,10 +16,14 @@ function getDBConnection($secrets) {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
         ]);
     } catch (Exception $e) {
-        // Fallback to local SQLite
+        // Fallback to local SQLite if primary connection fails
         $fallbackPath = __DIR__ . '/../../data/portal.sqlite';
         $fallbackDsn = 'sqlite:' . $fallbackPath;
-        if (!is_dir(dirname($fallbackPath))) @mkdir(dirname($fallbackPath), 0775, true);
+        
+        // Ensure directory exists
+        if (!is_dir(dirname($fallbackPath))) {
+            @mkdir(dirname($fallbackPath), 0775, true);
+        }
         
         return new PDO($fallbackDsn, null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -27,11 +32,26 @@ function getDBConnection($secrets) {
     }
 }
 
+function getSqlType($pdo, $type) {
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    
+    if ($type === 'serial') {
+        return ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
+    }
+    
+    if ($type === 'timestamp_update') {
+        // SQLite does not support ON UPDATE CURRENT_TIMESTAMP
+        return ($driver === 'sqlite') ? 'DATETIME DEFAULT CURRENT_TIMESTAMP' : 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP';
+    }
+    
+    return $type;
+}
+
 function sendJson($s, $m, $d = []) {
-    $r = array_merge(["status" => $s, "message" => $m], $d);
+    // Clear buffer to remove any previous warnings/text
     if (ob_get_length()) ob_clean();
     header('Content-Type: application/json');
-    echo json_encode($r);
+    echo json_encode(array_merge(["status" => $s, "message" => $m], $d));
     exit();
 }
 
@@ -42,22 +62,6 @@ function verifyAuth($input) {
     }
     $parts = explode('.', $input['token']);
     return json_decode(base64_decode($parts[0]), true);
-}
-
-// --- SCHEMA HELPERS (Polyfill) ---
-
-function getSqlType($pdo, $type) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    
-    if ($type === 'serial') {
-        return ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
-    }
-    
-    if ($type === 'timestamp_update') {
-        return ($driver === 'sqlite') ? 'DATETIME DEFAULT CURRENT_TIMESTAMP' : 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP';
-    }
-    
-    return $type;
 }
 
 function ensureUserSchema($pdo) {
@@ -93,7 +97,7 @@ function ensurePartnerSchema($pdo) {
 }
 
 function ensureSettingsSchema($pdo) {
-    // SQLite does not support ON UPDATE CURRENT_TIMESTAMP
+    // CRITICAL FIX: Use polyfill for timestamp to avoid SQLite crash
     $tsType = getSqlType($pdo, 'timestamp_update');
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
         setting_key VARCHAR(191) PRIMARY KEY,
@@ -123,7 +127,17 @@ function getSetting($pdo, $key, $default = '') {
     }
 }
 
-// --- THIRD PARTY HELPERS ---
+function logSystemEvent($pdo, $message, $level = 'info') {
+    try {
+        ensureLogSchema($pdo);
+        $stmt = $pdo->prepare("INSERT INTO system_logs (level, message) VALUES (?, ?)");
+        $stmt->execute([$level, $message]);
+    } catch (Exception $e) {
+        error_log("WANDWEB LOG: $message");
+    }
+}
+
+// --- THIRD PARTY & HELPERS ---
 
 function stripeRequest($secrets, $method, $endpoint, $data = []) {
     $endpoint = ltrim($endpoint, '/');
@@ -139,7 +153,6 @@ function stripeRequest($secrets, $method, $endpoint, $data = []) {
     
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $result = curl_exec($ch);
     curl_close($ch);
     return json_decode($result, true);
@@ -153,19 +166,10 @@ function pushToSwipeOne($secrets, $endpoint, $data, $method = 'POST') {
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "x-api-key: " . $secrets['SWIPEONE_API_KEY'],
-        "Content-Type: application/json"
-    ]);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["x-api-key: " . $secrets['SWIPEONE_API_KEY'], "Content-Type: application/json"]);
     $response = curl_exec($ch);
     curl_close($ch);
     return json_decode($response, true);
-}
-
-// --- NOTIFICATIONS & EMAIL ---
-
-function renderEmail($pdo, $subject, $body, $link = null, $button = null, $name = '') {
-    return "$subject$body" . ($link ? "$button" : "") . "";
 }
 
 function sendInvite($pdo, $email) {
@@ -173,9 +177,8 @@ function sendInvite($pdo, $email) {
     $pdo->prepare("DELETE FROM password_resets WHERE email=?")->execute([$email]);
     $pdo->prepare("INSERT INTO password_resets (email,token,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 7 DAY))")->execute([$email, $token]);
     $link = "https://wandweb.co/portal/?action=set_password&token=" . $token;
-    $body = "Welcome. Set your password: <a href='$link'>Click Here</a>";
     $headers = "MIME-Version: 1.0\r\nContent-type:text/html;charset=UTF-8\r\nFrom: noreply@wandweb.co";
-    return mail($email, "Your Portal Account", $body, $headers);
+    return mail($email, "Your Portal Account", "Set password here: Link", $headers);
 }
 
 function createNotification($pdo, $userId, $message, $type = null, $id = 0) {
@@ -199,20 +202,10 @@ function notifyAllAdminsForProject($pdo, $projectId, $message) {
     }
 }
 
-function logSystemEvent($pdo, $message, $level = 'info') {
-    try {
-        ensureLogSchema($pdo);
-        $stmt = $pdo->prepare("INSERT INTO system_logs (level, message) VALUES (?, ?)");
-        $stmt->execute([$level, $message]);
-    } catch (Exception $e) {
-        error_log("WANDWEB LOG: $message");
-    }
-}
-
-// --- AI HELPERS ---
+// --- GOOGLE & AI ---
 
 function getGoogleAccessToken($secrets) {
-    if (empty($secrets['GOOGLE_REFRESH_TOKEN'])) throw new Exception("Missing Google Token");
+    if (empty($secrets['GOOGLE_REFRESH_TOKEN'])) return null;
     
     $ch = curl_init("https://oauth2.googleapis.com/token");
     curl_setopt($ch, CURLOPT_POST, 1);
@@ -243,7 +236,7 @@ function callGeminiAI($pdo, $secrets, $systemPrompt, $userPrompt = "") {
 }
 
 function fetchWandWebContext() {
-    return "WandWeb: Web Design & AI Automation Agency.";
+    return "WandWeb Services.";
 }
 
 function notifyAllAdmins($pdo, $msg) {

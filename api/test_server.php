@@ -1,28 +1,27 @@
 <?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
-echo "<h3>API Diagnostics</h3>";
+echo "Checking Environment...\n";
 
 if (file_exists('modules/utils.php')) {
-    echo "<p>✓ Found modules/utils.php</p>";
+    echo "modules/utils.php found.\n";
     require_once 'modules/utils.php';
 } else {
-    die("<p>✗ ERROR: modules/utils.php NOT FOUND in " . __DIR__ . "</p>");
+    die("ERROR: modules/utils.php NOT found in " . getcwd());
 }
 
-// Mock secrets
+// Use a dummy secret to test DB connection logic
 $secrets = ['DB_DSN' => 'sqlite:../data/test.sqlite'];
 
 try {
     $pdo = getDBConnection($secrets);
-    echo "<p>✓ Database Connected (" . $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) . ")</p>";
+    echo "Database Connected: " . $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) . "\n";
 
     // Test the schema fix
-    echo "<p>Testing Settings Schema... ";
     ensureSettingsSchema($pdo);
-    echo "<span style='color:green'>✓ OK (Schema Created/Exists)</span></p>";
+    echo "Schema Test: PASSED (No Syntax Errors)\n";
 } catch (Exception $e) {
-    echo "<p>✗ DB ERROR: " . $e->getMessage() . "</p>";
+    echo "CRITICAL ERROR: " . $e->getMessage();
 }
 
 ?>
