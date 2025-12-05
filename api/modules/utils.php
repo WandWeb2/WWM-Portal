@@ -1,6 +1,6 @@
 <?php
 // /api/modules/utils.php
-// Version: 30.1 - Fixed SQLite/MySQL Compatibility
+// Version: 31.1 - SQLite/MySQL Polyfill Fix
 
 function getDBConnection($secrets) {
     if (!empty($secrets['DB_DSN'])) {
@@ -15,7 +15,7 @@ function getDBConnection($secrets) {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
         ]);
     } catch (Exception $e) {
-        // Fallback to local SQLite if primary fails
+        // Fallback to local SQLite
         $fallbackPath = __DIR__ . '/../../data/portal.sqlite';
         $fallbackDsn = 'sqlite:' . $fallbackPath;
         if (!is_dir(dirname($fallbackPath))) @mkdir(dirname($fallbackPath), 0775, true);
@@ -30,22 +30,40 @@ function getDBConnection($secrets) {
 function sendJson($s, $m, $d = []) {
     $r = array_merge(["status" => $s, "message" => $m], $d);
     if (ob_get_length()) ob_clean();
+    header('Content-Type: application/json');
     echo json_encode($r);
     exit();
 }
 
 function verifyAuth($input) {
-    if (empty($input['token'])) { sendJson('error', 'Unauthorized'); exit(); }
+    if (empty($input['token'])) {
+        sendJson('error', 'Unauthorized');
+        exit();
+    }
     $parts = explode('.', $input['token']);
     return json_decode(base64_decode($parts[0]), true);
 }
 
-function ensureUserSchema($pdo) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    $ai = ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
+// --- SCHEMA HELPERS (Polyfill) ---
 
+function getSqlType($pdo, $type) {
+    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    
+    if ($type === 'serial') {
+        return ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
+    }
+    
+    if ($type === 'timestamp_update') {
+        return ($driver === 'sqlite') ? 'DATETIME DEFAULT CURRENT_TIMESTAMP' : 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP';
+    }
+    
+    return $type;
+}
+
+function ensureUserSchema($pdo) {
+    $idType = getSqlType($pdo, 'serial');
     $pdo->exec("CREATE TABLE IF NOT EXISTS users (
-        id $ai,
+        id $idType,
         email VARCHAR(191) UNIQUE,
         password_hash VARCHAR(255),
         full_name VARCHAR(100),
@@ -64,11 +82,9 @@ function ensureUserSchema($pdo) {
 }
 
 function ensurePartnerSchema($pdo) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    $ai = ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
-
+    $idType = getSqlType($pdo, 'serial');
     $pdo->exec("CREATE TABLE IF NOT EXISTS partner_assignments (
-        id $ai,
+        id $idType,
         partner_id INT NOT NULL,
         client_id INT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -77,28 +93,19 @@ function ensurePartnerSchema($pdo) {
 }
 
 function ensureSettingsSchema($pdo) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    if ($driver === 'sqlite') {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
-            setting_key TEXT PRIMARY KEY,
-            setting_value TEXT,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )");
-    } else {
-        $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
-            setting_key VARCHAR(191) PRIMARY KEY,
-            setting_value TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        )");
-    }
+    // SQLite does not support ON UPDATE CURRENT_TIMESTAMP
+    $tsType = getSqlType($pdo, 'timestamp_update');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
+        setting_key VARCHAR(191) PRIMARY KEY,
+        setting_value TEXT,
+        updated_at $tsType
+    )");
 }
 
 function ensureLogSchema($pdo) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    $ai = ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
-
+    $idType = getSqlType($pdo, 'serial');
     $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
-        id $ai,
+        id $idType,
         level VARCHAR(20),
         message TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -116,22 +123,20 @@ function getSetting($pdo, $key, $default = '') {
     }
 }
 
-function getEmailTemplate($pdo) {
-    $template = getSetting($pdo, 'email_template', '');
-    if (!empty($template)) return $template;
-    return "<!DOCTYPE html><html><head><style>body{font-family:Arial,sans-serif}container{max-width:600px;margin:0 auto}.header{background:#2c3259;padding:20px;color:white}.content{padding:20px}</style></head><body><div class='container'><div class='header'><h1>WandWeb Portal</h1></div><div class='content'>[[BODY]]</div>[[BUTTON]]<div style='background:#f9fafb;padding:10px;text-align:center;font-size:12px'>&copy; " . date('Y') . " Wandering Webmaster</div></div></body></html>";
-}
+// --- THIRD PARTY HELPERS ---
 
 function stripeRequest($secrets, $method, $endpoint, $data = []) {
     $endpoint = ltrim($endpoint, '/');
     $ch = curl_init("https://api.stripe.com/v1/$endpoint");
     $headers = ["Authorization: Bearer " . $secrets['STRIPE_SECRET_KEY']];
+    
     if ($method === 'POST') {
         curl_setopt($ch, CURLOPT_POST, 1);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
     } elseif ($method === 'DELETE') {
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
     }
+    
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -140,23 +145,58 @@ function stripeRequest($secrets, $method, $endpoint, $data = []) {
     return json_decode($result, true);
 }
 
-function testDatabaseConnection($pdo) {
-    try {
-        $result = $pdo->query("SELECT 1");
-        return ['status' => 'connected', 'message' => 'Database connection working'];
-    } catch (Exception $e) {
-        return ['status' => 'disconnected', 'message' => $e->getMessage()];
+function pushToSwipeOne($secrets, $endpoint, $data, $method = 'POST') {
+    if (empty($secrets['SWIPEONE_API_KEY']) || empty($secrets['SWIPEONE_WORKSPACE_ID'])) return;
+    
+    $url = "https://api.swipeone.com/api/workspaces/" . $secrets['SWIPEONE_WORKSPACE_ID'] . "/$endpoint";
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "x-api-key: " . $secrets['SWIPEONE_API_KEY'],
+        "Content-Type: application/json"
+    ]);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($response, true);
+}
+
+// --- NOTIFICATIONS & EMAIL ---
+
+function renderEmail($pdo, $subject, $body, $link = null, $button = null, $name = '') {
+    return "$subject$body" . ($link ? "$button" : "") . "";
+}
+
+function sendInvite($pdo, $email) {
+    $token = bin2hex(random_bytes(32));
+    $pdo->prepare("DELETE FROM password_resets WHERE email=?")->execute([$email]);
+    $pdo->prepare("INSERT INTO password_resets (email,token,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 7 DAY))")->execute([$email, $token]);
+    $link = "https://wandweb.co/portal/?action=set_password&token=" . $token;
+    $body = "Welcome. Set your password: <a href='$link'>Click Here</a>";
+    $headers = "MIME-Version: 1.0\r\nContent-type:text/html;charset=UTF-8\r\nFrom: noreply@wandweb.co";
+    return mail($email, "Your Portal Account", $body, $headers);
+}
+
+function createNotification($pdo, $userId, $message, $type = null, $id = 0) {
+    if (!$userId) return;
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) VALUES (?, ?, ?, ?)");
+    $stmt->execute([$userId, $message, $type, $id]);
+}
+
+function notifyPartnerIfAssigned($pdo, $clientId, $message) {
+    ensurePartnerSchema($pdo);
+    $stmt = $pdo->prepare("SELECT partner_id FROM partner_assignments WHERE client_id = ?");
+    $stmt->execute([$clientId]);
+    $partner = $stmt->fetch();
+    if ($partner) createNotification($pdo, $partner['partner_id'], "[Partner Alert] " . $message);
+}
+
+function notifyAllAdminsForProject($pdo, $projectId, $message) {
+    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
+    foreach ($stmt->fetchAll() as $admin) {
+        createNotification($pdo, $admin['id'], $message, 'project', $projectId);
     }
-}
-
-function logToFile($message, $level = 'info') {
-    $timestamp = date('Y-m-d H:i:s');
-    $logLine = "[$timestamp] [$level] $message\n";
-    @file_put_contents(getLogFilePath(), $logLine, FILE_APPEND);
-}
-
-function getLogFilePath() {
-    return sys_get_temp_dir() . '/wandweb_system.log';
 }
 
 function logSystemEvent($pdo, $message, $level = 'info') {
@@ -165,97 +205,49 @@ function logSystemEvent($pdo, $message, $level = 'info') {
         $stmt = $pdo->prepare("INSERT INTO system_logs (level, message) VALUES (?, ?)");
         $stmt->execute([$level, $message]);
     } catch (Exception $e) {
-        logToFile($message, $level);
+        error_log("WANDWEB LOG: $message");
     }
 }
 
-function handleGetSystemLogs($pdo, $i) {
-    $u = null;
-    try {
-        $u = verifyAuth($i);
-        if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
-    } catch (Exception $e) {
-        logToFile('Failed to verify auth: ' . $e->getMessage(), 'warning');
-    }
+// --- AI HELPERS ---
+
+function getGoogleAccessToken($secrets) {
+    if (empty($secrets['GOOGLE_REFRESH_TOKEN'])) throw new Exception("Missing Google Token");
     
-    $logs = [];
-    $dbStatus = testDatabaseConnection($pdo);
-    
-    if ($dbStatus['status'] === 'connected') {
-        try {
-            ensureLogSchema($pdo);
-            $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 50");
-            $logs = $stmt->fetchAll();
-        } catch (Exception $e) {
-            logToFile('Failed to fetch DB logs: ' . $e->getMessage(), 'error');
-        }
-    }
-    
-    $logFile = getLogFilePath();
-    if (file_exists($logFile)) {
-        $fileLines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if ($fileLines) {
-            foreach (array_reverse($fileLines) as $idx => $line) {
-                preg_match('/\[(.*?)\] \[(.*?)\] (.*)/', $line, $matches);
-                if (!empty($matches)) {
-                    $logs[] = ['id' => -($idx + 1), 'level' => $matches[2] ?? 'info', 'message' => $matches[3] ?? $line, 'created_at' => $matches[1] ?? date('Y-m-d H:i:s'), 'source' => 'file'];
-                }
-            }
-        }
-    }
-    
-    usort($logs, function($a, $b) {
-        $aTime = strtotime($a['created_at'] ?? 'now');
-        $bTime = strtotime($b['created_at'] ?? 'now');
-        return $bTime - $aTime;
-    });
-    
-    sendJson('success', 'Logs Loaded', ['logs' => $logs, 'db_status' => $dbStatus]);
+    $ch = curl_init("https://oauth2.googleapis.com/token");
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'client_id' => $secrets['GOOGLE_CLIENT_ID'],
+        'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'],
+        'refresh_token' => $secrets['GOOGLE_REFRESH_TOKEN'],
+        'grant_type' => 'refresh_token'
+    ]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $res = json_decode(curl_exec($ch), true);
+    curl_close($ch);
+    return $res['access_token'] ?? null;
 }
 
-function handleDebugLog($pdo, $i) {
-    $u = verifyAuth($i);
-    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
-    $msg = $i['message'] ?? 'Debug action triggered';
-    logSystemEvent($pdo, $msg, 'info');
-    sendJson('success', 'Debug log added');
+function callGeminiAI($pdo, $secrets, $systemPrompt, $userPrompt = "") {
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" . $secrets['GEMINI_API_KEY'];
+    $payload = ["contents" => [["role" => "user", "parts" => [["text" => $systemPrompt . "\n\n" . $userPrompt]]]]];
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    $res = json_decode(curl_exec($ch), true);
+    curl_close($ch);
+    return $res;
 }
 
-function handleDebugTest($pdo, $i, $secrets) {
-    $u = verifyAuth($i);
-    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
-    
-    $dbStatus = testDatabaseConnection($pdo);
-    $test = $i['test'] ?? 'unknown';
-    $result = '';
-    
-    switch($test) {
-        case 'api_connection':
-            $result = 'API: ✓ Working';
-            logSystemEvent($pdo, $result, 'success');
-            break;
-        case 'database_status':
-            if ($dbStatus['status'] === 'connected') {
-                $result = 'Database: ✓ Connected';
-                logSystemEvent($pdo, $result, 'success');
-            } else {
-                $result = 'Database: ✗ Offline - Using fallback logs';
-                logSystemEvent($pdo, $result, 'warning');
-            }
-            break;
-        case 'check_php_errors':
-            $result = 'PHP: ✓ Version ' . phpversion();
-            logSystemEvent($pdo, $result, 'success');
-            break;
-        case 'rebuild_partners':
-            $result = 'Partners: ✓ Rebuild triggered';
-            logSystemEvent($pdo, $result, 'success');
-            break;
-        default:
-            $result = "Test: $test completed";
-            logSystemEvent($pdo, $result, 'info');
-    }
-    
-    sendJson('success', 'Test completed', ['result' => $result, 'db_status' => $dbStatus]);
+function fetchWandWebContext() {
+    return "WandWeb: Web Design & AI Automation Agency.";
 }
+
+function notifyAllAdmins($pdo, $msg) {
+    notifyAllAdminsForProject($pdo, 0, $msg);
+}
+
 ?>

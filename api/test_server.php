@@ -1,32 +1,28 @@
 <?php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
-header('Content-Type: text/plain');
-echo "1. Server is Alive\n";
+echo "<h3>API Diagnostics</h3>";
 
-if (file_exists('../secrets.php')) {
-    echo "2. secrets.php found\n";
-    include '../secrets.php';
+if (file_exists('modules/utils.php')) {
+    echo "<p>✓ Found modules/utils.php</p>";
+    require_once 'modules/utils.php';
 } else {
-    echo "2. secrets.php NOT found (using defaults)\n";
-    $secrets = ['DB_DSN' => 'sqlite:../data/portal.sqlite'];
+    die("<p>✗ ERROR: modules/utils.php NOT FOUND in " . __DIR__ . "</p>");
 }
 
-require_once 'modules/utils.php';
-
-echo "3. utils.php loaded\n";
+// Mock secrets
+$secrets = ['DB_DSN' => 'sqlite:../data/test.sqlite'];
 
 try {
     $pdo = getDBConnection($secrets);
-    echo "4. Database Connection: SUCCESS\n";
-    echo " Driver: " . $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) . "\n";
+    echo "<p>✓ Database Connected (" . $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) . ")</p>";
 
-    // Try a simple query
-    $stmt = $pdo->query("SELECT count(*) FROM users");
-    echo "5. User Count: " . $stmt->fetchColumn() . "\n";
+    // Test the schema fix
+    echo "<p>Testing Settings Schema... ";
+    ensureSettingsSchema($pdo);
+    echo "<span style='color:green'>✓ OK (Schema Created/Exists)</span></p>";
 } catch (Exception $e) {
-    echo "4. Database Connection: FAILED\n";
-    echo " Error: " . $e->getMessage() . "\n";
+    echo "<p>✗ DB ERROR: " . $e->getMessage() . "</p>";
 }
 
 ?>
