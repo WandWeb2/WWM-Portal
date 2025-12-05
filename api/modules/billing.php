@@ -1,6 +1,10 @@
 <?php
 // /api/modules/billing.php
-// Version: 15.2 - Fixed Stripe Integration with Customer Expansion
+// Version: 15.3 - Fixed Redeclaration Crash
+
+// --- INCLUDE GUARD ---
+if (defined('WWM_BILLING_LOADED')) return;
+define('WWM_BILLING_LOADED', true);
 
 function getOrSyncStripeId($pdo, $user_id, $stripe_id = null) {
     if (!empty($stripe_id)) {
@@ -310,4 +314,5 @@ function handleGetBillingFeed($pdo, $input, $secrets) {
     
     sendJson('success', 'Feed loaded', ['feed' => $feed]);
 }
+
 ?>
