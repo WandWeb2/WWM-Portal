@@ -584,8 +584,20 @@ window.SettingsView = ({ token, role }) => {
     }, [activeTab]);
 
     const fetchLogs = async () => {
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_system_logs', token }) });
-        if (res.status === 'success') setSysLogs(res.logs || []);
+        try {
+            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_system_logs', token }) });
+            console.log('fetchLogs response:', res);
+            if (res && res.status === 'success') {
+                setSysLogs(res.logs || []);
+                console.log('Logs updated:', res.logs?.length || 0);
+            } else {
+                console.error('fetchLogs failed:', res);
+                setSysLogs([]);
+            }
+        } catch (error) {
+            console.error('fetchLogs error:', error);
+            setSysLogs([]);
+        }
     };
 
     const fetchUsers = async () => {
@@ -783,14 +795,14 @@ window.SettingsView = ({ token, role }) => {
                             Common Debugging Checks
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'api_connection' }) }); setTimeout(fetchLogs, 500); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">✓ API Status</button>
-                            <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'database_status' }) }); setTimeout(fetchLogs, 500); }} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔌 Database</button>
-                            <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'emergency_status' }) }); setTimeout(fetchLogs, 500); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">⚠️ Emergency</button>
-                            <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'permissions_audit' }) }); setTimeout(fetchLogs, 500); }} className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">👥 Permissions</button>
-                            <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'rebuild_partners' }) }); setTimeout(fetchLogs, 500); }} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔄 Rebuild Partners</button>
-                            <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'resync_user_59' }) }); setTimeout(fetchLogs, 500); }} className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔍 Check User #59</button>
-                            <button onClick={() => { setSysLogs([]); fetchLogs(); }} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔄 Refresh Logs</button>
-                            <button onClick={async () => { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_log', token, message: '[Manual] Admin triggered system check' }) }); setTimeout(fetchLogs, 500); }} className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">📝 Log Event</button>
+                            <button onClick={async () => { console.log('Clicking API Status...'); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'api_connection' }) }); console.log('API test response:', res); setTimeout(() => fetchLogs(), 800); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">✓ API Status</button>
+                            <button onClick={async () => { console.log('Clicking Database...'); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'database_status' }) }); console.log('DB test response:', res); setTimeout(() => fetchLogs(), 800); }} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔌 Database</button>
+                            <button onClick={async () => { console.log('Clicking Emergency...'); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'emergency_status' }) }); console.log('Emergency test response:', res); setTimeout(() => fetchLogs(), 800); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">⚠️ Emergency</button>
+                            <button onClick={async () => { console.log('Clicking Permissions...'); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'permissions_audit' }) }); console.log('Permissions test response:', res); setTimeout(() => fetchLogs(), 800); }} className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">👥 Permissions</button>
+                            <button onClick={async () => { console.log('Clicking Rebuild Partners...'); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'rebuild_partners' }) }); console.log('Rebuild test response:', res); setTimeout(() => fetchLogs(), 800); }} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔄 Rebuild Partners</button>
+                            <button onClick={async () => { console.log('Clicking Check User #59...'); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_test', token, test: 'resync_user_59' }) }); console.log('User 59 test response:', res); setTimeout(() => fetchLogs(), 800); }} className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔍 Check User #59</button>
+                            <button onClick={() => { console.log('Refreshing logs directly...'); fetchLogs(); }} className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">🔄 Refresh Logs</button>
+                            <button onClick={async () => { console.log('Logging event...'); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'debug_log', token, message: '[Manual] Admin triggered system check' }) }); console.log('Log event response:', res); setTimeout(() => fetchLogs(), 800); }} className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors">📝 Log Event</button>
                         </div>
                     </div>
                     <div className="bg-slate-900 text-green-400 p-4 rounded-xl font-mono text-xs h-[500px] overflow-y-auto">
@@ -798,10 +810,10 @@ window.SettingsView = ({ token, role }) => {
                             <span className="font-bold text-white">System Logs</span>
                             {sysLogs.length > 0 && <span className="text-slate-400 text-[10px]">{sysLogs.length} entries</span>}
                         </div>
-                        {sysLogs.length === 0 ? <div className="text-slate-500 italic">No logs found. Run a debugging check above to populate logs.</div> : (
+                        {sysLogs.length === 0 ? <div className="text-slate-500 italic">No logs found. Click a button above to populate logs.</div> : (
                             <>
-                                {sysLogs.map(l => (
-                                    <div key={l.id} className="mb-1 border-b border-slate-800 pb-1 last:border-0">
+                                {sysLogs.map((l, idx) => (
+                                    <div key={`${l.id}-${idx}`} className="mb-1 border-b border-slate-800 pb-1 last:border-0">
                                         <span className="text-slate-500 mr-2">[{new Date(l.created_at).toLocaleTimeString()}]</span>
                                         <span className={`uppercase font-bold mr-2 ${l.level==='error'?'text-red-500':(l.level==='success'?'text-green-500':l.level==='warning'?'text-yellow-400':'text-blue-400')}`}>{l.level}</span>
                                         <span>{l.message}</span>
