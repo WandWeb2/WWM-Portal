@@ -40,13 +40,22 @@ function handleGetBilling($pdo, $input, $secrets) {
         $rawQuotes = stripeRequest($secrets, 'GET', 'quotes?limit=20')['data'] ?? [];
         $quotesList = [];
         foreach($rawQuotes as $q) {
-             $quotesList[] = ['id'=>$q['id'], 'number'=>$q['number']??'DRAFT', 'client_name'=>$q['customer_email']??'Client', 'amount'=>number_format($q['amount_total']/100, 2), 'status'=>$q['status'], 'date_ts'=>$q['created']];
+             $quotesList[] = ['id'=>$q['id'], 'number'=>$q['number']??'DRAFT', 'client_name'=>$q['customer_name']??$q['customer_email']??'Client', 'amount'=>number_format($q['amount_total']/100, 2), 'status'=>$q['status'], 'date_ts'=>$q['created']];
              $feed[] = ['id'=>$q['id'], 'type'=>'quote', 'title'=>'Quote', 'amount'=>number_format($q['amount_total']/100, 2), 'status'=>$q['status'], 'date_ts'=>$q['created'], 'date_display'=>date('M d', $q['created'])];
         }
-        $rawSubs = stripeRequest($secrets, 'GET', "subscriptions?status=active&limit=20&expand%5B%5D=data.plan.product")['data'] ?? [];
+        $rawSubs = stripeRequest($secrets, 'GET', "subscriptions?status=active&limit=20&expand%5B%5D=data.customer&expand%5B%5D=data.plan.product")['data'] ?? [];
         $subsList = [];
         foreach($rawSubs as $s) {
-            $subsList[] = ['id'=>$s['id'], 'client_name'=>'Client', 'plan'=>$s['plan']['product']['name']??'Sub', 'amount'=>number_format($s['plan']['amount']/100, 2), 'interval'=>$s['plan']['interval'], 'status'=>$s['status'], 'next_bill'=>date('M d', $s['current_period_end']), 'date_ts'=>$s['created']];
+            $custName = 'Client';
+            if (isset($s['customer']['name'])) {
+                $custName = $s['customer']['name'];
+            } elseif (isset($s['customer']['email'])) {
+                $custName = $s['customer']['email'];
+            } elseif (is_string($s['customer'])) {
+                // customer is just the ID string
+                $custName = 'Client #' . substr($s['customer'], 0, 8);
+            }
+            $subsList[] = ['id'=>$s['id'], 'client_name'=>$custName, 'plan'=>$s['plan']['product']['name']??'Sub', 'amount'=>number_format($s['plan']['amount']/100, 2), 'interval'=>$s['plan']['interval'], 'status'=>$s['status'], 'next_bill'=>date('M d', $s['current_period_end']), 'date_ts'=>$s['created']];
             $feed[] = ['id'=>$s['id'], 'type'=>'subscription', 'title'=>'Sub: '.($s['plan']['product']['name']??''), 'amount'=>number_format($s['plan']['amount']/100, 2), 'status'=>$s['status'], 'date_ts'=>$s['created'], 'date_display'=>date('M d', $s['created'])];
         }
         usort($feed, function($a, $b) { return $b['date_ts'] - $a['date_ts']; });
