@@ -126,6 +126,7 @@ try {
         case 'get_stripe_portal': handleStripePortal($pdo, $input, $secrets); break;
         case 'create_subscription_manually': handleCreateSubscriptionManually($pdo, $input, $secrets); break;
         case 'subscription_action': handleSubscriptionAction($pdo, $input, $secrets); break;
+        case 'refund_payment': handleRefund($pdo, $input, $secrets); break;
         
         // Products
         case 'create_product': handleCreateProduct($pdo, $input, $secrets); break;

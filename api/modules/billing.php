@@ -91,6 +91,7 @@ function handleCreateInvoice($pdo, $input, $secrets) {
     $inv = stripeRequest($secrets, 'POST', 'invoices', $payload);
     if (!isset($inv['id'])) sendJson('error', $inv['error']['message'] ?? 'Create Failed');
     if (!empty($input['items'])) { foreach ($input['items'] as $item) { stripeRequest($secrets, 'POST', 'invoiceitems', ['customer' => $sid, 'price' => $item['price_id'], 'invoice' => $inv['id']]); } }
+    if (!empty($input['coupon'])) { stripeRequest($secrets, 'POST', "invoices/{$inv['id']}", ['discounts' => [['coupon' => $input['coupon']]]]); }
     if (!empty($input['send_now']) && $input['send_now'] === true) { stripeRequest($secrets, 'POST', "invoices/{$inv['id']}/finalize"); stripeRequest($secrets, 'POST', "invoices/{$inv['id']}/send"); }
     sendJson('success', 'Invoice Created');
 }
@@ -215,4 +216,20 @@ function handleSaveServiceOrder($pdo, $input) {
     $pdo->commit(); sendJson('success', 'Order Saved'); 
 }
 function handleStripePortal($pdo,$i,$s){$u=verifyAuth($i);$sid=getOrSyncStripeId($pdo,$u['uid'],$s);$r=stripeRequest($s,'POST','billing_portal/sessions',['customer'=>$sid,'return_url'=>'https://'.$_SERVER['HTTP_HOST'].'/portal/']);if(isset($r['url']))sendJson('success','Link',['url'=>$r['url']]);else sendJson('error',$r['error']['message']);}
+
+function handleRefund($pdo, $input, $secrets) {
+    $user = verifyAuth($input);
+    if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    $chargeId = $input['charge_id'] ?? null;
+    if (!$chargeId) sendJson('error', 'Charge ID required');
+    $payload = ['charge' => $chargeId];
+    if (!empty($input['amount'])) $payload['amount'] = (int)($input['amount'] * 100);
+    $res = stripeRequest($secrets, 'POST', 'refunds', $payload);
+    if (isset($res['id'])) {
+        if(function_exists('logSystemEvent')) logSystemEvent($pdo, "Refund Processed: \$" . ($input['amount'] ?? 'full') . " for charge {$chargeId}", 'success');
+        sendJson('success', 'Refund Processed', ['refund_id' => $res['id']]);
+    } else {
+        sendJson('error', $res['error']['message'] ?? 'Refund Failed');
+    }
+}
 ?>
