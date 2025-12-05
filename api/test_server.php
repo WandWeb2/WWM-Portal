@@ -3,27 +3,30 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 echo "Checking Environment...\n";
 
-// Use absolute path based on the current file's directory
+// Robust Path Detection
+// 1. Try standard relative path (if running from api/)
 $utilsPath = __DIR__ . '/modules/utils.php';
+
+// 2. Try parent directory (if file was copied to portal/)
+if (!file_exists($utilsPath)) {
+    $utilsPath = __DIR__ . '/../api/modules/utils.php';
+}
 
 if (file_exists($utilsPath)) {
     echo "modules/utils.php found at $utilsPath.\n";
     require_once $utilsPath;
 } else {
-    // Attempt to debug CWD if file not found
     echo "CWD: " . getcwd() . "\n";
-    die("ERROR: modules/utils.php NOT found at $utilsPath");
+    die("ERROR: modules/utils.php NOT found. Searched:\n - " . __DIR__ . '/modules/utils.php' . "\n - " . __DIR__ . '/../api/modules/utils.php');
 }
 
 // Use a dummy secret to test DB connection logic
-// Assuming data folder is one level up from api/
-$secrets = ['DB_DSN' => 'sqlite:' . __DIR__ . '/../data/test.sqlite'];
+$secrets = ['DB_DSN' => 'sqlite:' . __DIR__ . '/../../data/test.sqlite'];
 
 try {
     $pdo = getDBConnection($secrets);
     echo "Database Connected: " . $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) . "\n";
 
-    // Test the schema fix
     if (function_exists('ensureSettingsSchema')) {
         ensureSettingsSchema($pdo);
         echo "Schema Test: PASSED (No Syntax Errors)\n";

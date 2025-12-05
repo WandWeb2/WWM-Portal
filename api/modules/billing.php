@@ -1,10 +1,10 @@
 <?php
 // =============================================================================
 // Wandering Webmaster Custom Component
-// Version: 15.5 - CRITICAL FIX: Function Wrapper
+// Version: 15.6 - CRITICAL FIX: Function Wrapper (Force Update)
 // =============================================================================
 
-// PREVENT REDECLARATION CRASH
+// CRASH PREVENTION: Wrap entire file in existence check
 if (!function_exists('getOrSyncStripeId')) {
 
     function getOrSyncStripeId($pdo, $user_id, $stripe_id = null) {
