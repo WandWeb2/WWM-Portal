@@ -424,27 +424,46 @@ function logSystemEvent($pdo, $message, $level = 'info') {
 }
 
 function handleGetSystemLogs($pdo, $i) {
-    $u = verifyAuth($i);
-    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    // Try to verify auth, but don't fail if it causes DB error
+    $u = null;
+    try {
+        $u = verifyAuth($i);
+        if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    } catch (Exception $e) {
+        // Even if auth fails, still try to serve logs from file
+        logToFile('Failed to verify auth in handleGetSystemLogs: ' . $e->getMessage(), 'warning');
+    }
     
     $logs = [];
+    $dbStatus = testDatabaseConnection($pdo);
     
     // Try to get DB logs first
-    try {
-        ensureLogSchema($pdo);
-        $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 50");
-        $logs = $stmt->fetchAll();
-    } catch (Exception $e) {
-        // DB is down, add a system notice
+    if ($dbStatus['status'] === 'connected') {
+        try {
+            ensureLogSchema($pdo);
+            $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 50");
+            $logs = $stmt->fetchAll();
+        } catch (Exception $e) {
+            logToFile('Failed to fetch DB logs: ' . $e->getMessage(), 'error');
+            $logs[] = [
+                'id' => 0,
+                'level' => 'error',
+                'message' => 'DATABASE QUERY FAILED: ' . $e->getMessage(),
+                'created_at' => date('Y-m-d H:i:s'),
+                'source' => 'system'
+            ];
+        }
+    } else {
         $logs[] = [
-            'id' => 0,
+            'id' => -1,
             'level' => 'error',
-            'message' => 'DATABASE DISCONNECTED: ' . $e->getMessage(),
-            'created_at' => date('Y-m-d H:i:s')
+            'message' => 'DATABASE DISCONNECTED: ' . $dbStatus['message'],
+            'created_at' => date('Y-m-d H:i:s'),
+            'source' => 'system'
         ];
     }
     
-    // Append file logs (fallback logs)
+    // Always append file logs as fallback (whether DB is up or down)
     $logFile = getLogFilePath();
     if (file_exists($logFile)) {
         $fileLines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -454,7 +473,7 @@ function handleGetSystemLogs($pdo, $i) {
                 preg_match('/\[(.*?)\] \[(.*?)\] (.*)/', $line, $matches);
                 if (!empty($matches)) {
                     $logs[] = [
-                        'id' => -($idx + 1),
+                        'id' => -($idx + 2),
                         'level' => $matches[2] ?? 'info',
                         'message' => $matches[3] ?? $line,
                         'created_at' => $matches[1] ?? date('Y-m-d H:i:s'),
@@ -465,7 +484,14 @@ function handleGetSystemLogs($pdo, $i) {
         }
     }
     
-    sendJson('success', 'Logs Loaded', ['logs' => $logs, 'db_status' => testDatabaseConnection($pdo)]);
+    // Sort by date descending
+    usort($logs, function($a, $b) {
+        $aTime = strtotime($a['created_at'] ?? 'now');
+        $bTime = strtotime($b['created_at'] ?? 'now');
+        return $bTime - $aTime;
+    });
+    
+    sendJson('success', 'Logs Loaded', ['logs' => $logs, 'db_status' => $dbStatus]);
 }
 
 function handleDebugLog($pdo, $i) {
