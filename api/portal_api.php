@@ -68,6 +68,9 @@ try {
 
     $input = json_decode(file_get_contents('php://input'), true) ?? [];
     
+    // Log what we received for debugging
+    error_log("API Request: " . json_encode(['method' => $_SERVER['REQUEST_METHOD'], 'action' => ($input['action'] ?? 'none'), 'has_token' => !empty($input['token'])]), 3, '/tmp/wandweb_api_debug.log');
+    
     // Handle both JSON and FormData (for file uploads)
     if (empty($input)) {
         $input = $_POST;
