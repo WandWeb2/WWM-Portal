@@ -74,7 +74,7 @@ function handleGetBilling($pdo, $input, $secrets) {
 }
 
 function handleGetServices($pdo, $input, $secrets, $user) {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS sort_orders (obj_key VARCHAR(255) PRIMARY KEY, sort_index INT)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS sort_orders (obj_key TEXT PRIMARY KEY, sort_index INTEGER)");
     $sortMap = $pdo->query("SELECT obj_key, sort_index FROM sort_orders")->fetchAll(PDO::FETCH_KEY_PAIR);
     $rawProds = stripeRequest($secrets, 'GET', 'products?active=true&limit=100');
     $rawPrices = stripeRequest($secrets, 'GET', 'prices?active=true&limit=100');
@@ -222,7 +222,7 @@ function handleCreateCheckout($pdo, $i, $s) {
 }
 function handleSaveServiceOrder($pdo, $input) { 
     $user = verifyAuth($input); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized'); 
-    $pdo->exec("CREATE TABLE IF NOT EXISTS sort_orders (obj_key VARCHAR(255) PRIMARY KEY, sort_index INT)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS sort_orders (obj_key TEXT PRIMARY KEY, sort_index INTEGER)");
     $pdo->beginTransaction(); 
     $stmt = $pdo->prepare("REPLACE INTO sort_orders (obj_key, sort_index) VALUES (?, ?)"); 
     foreach ($input['items'] as $item) { $stmt->execute([$item['key'], $item['index']]); } 

@@ -51,10 +51,10 @@ function ensureUserSchema($pdo) {
 // === NEW: PARTNER SCHEMA ===
 function ensurePartnerSchema($pdo) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS partner_assignments (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        partner_id INT NOT NULL,
-        client_id INT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        partner_id INTEGER NOT NULL,
+        client_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(partner_id, client_id)
     )");
 }
@@ -62,9 +62,9 @@ function ensurePartnerSchema($pdo) {
 // === NEW: SETTINGS SCHEMA ===
 function ensureSettingsSchema($pdo) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
-        setting_key VARCHAR(191) PRIMARY KEY,
+        setting_key TEXT PRIMARY KEY,
         setting_value TEXT,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
 }
 
@@ -387,12 +387,12 @@ function internalGeminiRequest($apiKey, $model, $sys, $user) {
 // === SYSTEM LOGGING (RESTORED) ===
 function ensureLogSchema($pdo) {
     try {
-        // Use MySQL-compatible syntax
+        // Use SQLite-compatible syntax
         $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            level VARCHAR(20),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            level TEXT,
             message TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )");
     } catch (Exception $e) {
         // Silently fail if table creation has issues - DB might already exist
