@@ -217,7 +217,8 @@ function handleCreateCheckout($pdo, $i, $s) {
     $u=verifyAuth($i); $sid=getOrSyncStripeId($pdo, $u['uid'], $s);
     $mode = ($i['interval'] === 'one-time') ? 'payment' : 'subscription';
     $r = stripeRequest($s, 'POST', 'checkout/sessions', ['customer'=>$sid, 'line_items'=>[['price'=>$i['price_id'], 'quantity'=>1]], 'mode'=>$mode, 'success_url'=>'https://'.$_SERVER['HTTP_HOST'].'/portal/?status=success', 'cancel_url'=>'https://'.$_SERVER['HTTP_HOST'].'/portal/?status=cancel']);
-    if(isset($r['url'])) sendJson('success', 'Link', ['url'=>$r['url']]); else sendJson('error', 'Failed');
+    if(isset($r['url'])) sendJson('success', 'Link', ['url'=>$r['url']]); 
+    else sendJson('error', 'Failed');
 }
 function handleSaveServiceOrder($pdo, $input) { 
     $user = verifyAuth($input); if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized'); 

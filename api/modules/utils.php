@@ -400,6 +400,17 @@ function ensureLogSchema($pdo) {
     }
 }
 
+// === FALLBACK LOG FILE (when DB is down) ===
+function getLogFilePath() {
+    return sys_get_temp_dir() . '/wandweb_system.log';
+}
+
+function logToFile($message, $level = 'info') {
+    $timestamp = date('Y-m-d H:i:s');
+    $logLine = "[$timestamp] [$level] $message\n";
+    @file_put_contents(getLogFilePath(), $logLine, FILE_APPEND);
+}
+
 function logSystemEvent($pdo, $message, $level = 'info') {
     try {
         ensureLogSchema($pdo);
@@ -407,6 +418,7 @@ function logSystemEvent($pdo, $message, $level = 'info') {
         $stmt->execute([$level, $message]);
     } catch (Exception $e) { 
         // Fallback to file if DB fails
+        logToFile($message, $level);
         error_log("WANDWEB LOG [$level]: $message"); 
     }
 }
@@ -414,32 +426,132 @@ function logSystemEvent($pdo, $message, $level = 'info') {
 function handleGetSystemLogs($pdo, $i) {
     $u = verifyAuth($i);
     if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
-    ensureLogSchema($pdo);
-    $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 100");
-    sendJson('success', 'Logs Loaded', ['logs' => $stmt->fetchAll()]);
+    
+    $logs = [];
+    
+    // Try to get DB logs first
+    try {
+        ensureLogSchema($pdo);
+        $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT 50");
+        $logs = $stmt->fetchAll();
+    } catch (Exception $e) {
+        // DB is down, add a system notice
+        $logs[] = [
+            'id' => 0,
+            'level' => 'error',
+            'message' => 'DATABASE DISCONNECTED: ' . $e->getMessage(),
+            'created_at' => date('Y-m-d H:i:s')
+        ];
+    }
+    
+    // Append file logs (fallback logs)
+    $logFile = getLogFilePath();
+    if (file_exists($logFile)) {
+        $fileLines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if ($fileLines) {
+            $fileLines = array_reverse(array_slice($fileLines, -50)); // Last 50 lines
+            foreach ($fileLines as $idx => $line) {
+                preg_match('/\[(.*?)\] \[(.*?)\] (.*)/', $line, $matches);
+                if (!empty($matches)) {
+                    $logs[] = [
+                        'id' => -($idx + 1),
+                        'level' => $matches[2] ?? 'info',
+                        'message' => $matches[3] ?? $line,
+                        'created_at' => $matches[1] ?? date('Y-m-d H:i:s'),
+                        'source' => 'file_fallback'
+                    ];
+                }
+            }
+        }
+    }
+    
+    sendJson('success', 'Logs Loaded', ['logs' => $logs, 'db_status' => testDatabaseConnection($pdo)]);
 }
 
 function handleDebugLog($pdo, $i) {
     $u = verifyAuth($i);
     if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
-    ensureLogSchema($pdo);
+    
     $msg = $i['message'] ?? 'Debug action triggered';
     logSystemEvent($pdo, $msg, 'info');
     sendJson('success', 'Debug log added');
 }
 
+// === DATABASE CONNECTION TEST ===
+function testDatabaseConnection($pdo) {
+    try {
+        $result = $pdo->query("SELECT 1");
+        return ['status' => 'connected', 'message' => 'Database connection working'];
+    } catch (Exception $e) {
+        return ['status' => 'disconnected', 'message' => $e->getMessage()];
+    }
+}
+
 function handleDebugTest($pdo, $i, $secrets) {
     $u = verifyAuth($i);
     if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
-    ensureLogSchema($pdo);
+    
+    // Get DB status without requiring a working connection
+    $dbStatus = testDatabaseConnection($pdo);
     
     $test = $i['test'] ?? 'unknown';
     $result = '';
+    $diagnostics = [];
     
     switch($test) {
         case 'api_connection':
             $result = 'API Connection: ✓ WORKING - Portal API responding normally';
             logSystemEvent($pdo, $result, 'success');
+            break;
+            
+        case 'database_status':
+            $diagnostics = [
+                'status' => $dbStatus['status'],
+                'message' => $dbStatus['message'],
+                'timestamp' => date('Y-m-d H:i:s')
+            ];
+            if ($dbStatus['status'] === 'disconnected') {
+                $result = "Database Status: ✗ DISCONNECTED - {$dbStatus['message']}";
+                logSystemEvent($pdo, $result, 'error');
+            } else {
+                $result = "Database Status: ✓ CONNECTED";
+                try {
+                    ensureLogSchema($pdo);
+                    $stmt = $pdo->query("SELECT COUNT(*) as count FROM system_logs");
+                    $row = $stmt->fetch();
+                    $count = $row['count'] ?? 0;
+                    $result .= " - Found $count log entries";
+                    $diagnostics['log_count'] = $count;
+                } catch (Exception $e) {
+                    $diagnostics['log_error'] = $e->getMessage();
+                }
+                logSystemEvent($pdo, $result, 'success');
+            }
+            break;
+            
+        case 'emergency_status':
+            // Complete system status check without relying on DB
+            $diagnostics = [
+                'timestamp' => date('Y-m-d H:i:s'),
+                'database' => $dbStatus,
+                'php_version' => phpversion(),
+                'server_software' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown',
+                'log_file' => getLogFilePath(),
+                'log_file_exists' => file_exists(getLogFilePath()),
+                'log_file_readable' => is_readable(getLogFilePath()),
+                'log_file_size' => file_exists(getLogFilePath()) ? filesize(getLogFilePath()) : 0,
+                'temp_writable' => is_writable(sys_get_temp_dir()),
+                'api_uptime' => 'Running'
+            ];
+            
+            // Try to get file size
+            $logFile = getLogFilePath();
+            if (file_exists($logFile)) {
+                $diagnostics['recent_logs'] = array_slice(file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES), -10);
+            }
+            
+            $result = "System Emergency Status: Retrieved " . count($diagnostics) . " diagnostic points";
+            logSystemEvent($pdo, $result, 'info');
             break;
             
         case 'database_query':
@@ -563,6 +675,6 @@ function handleDebugTest($pdo, $i, $secrets) {
             logSystemEvent($pdo, $result, 'warning');
     }
     
-    sendJson('success', 'Diagnostic test completed', ['result' => $result]);
+    sendJson('success', 'Diagnostic test completed', ['result' => $result, 'diagnostics' => $diagnostics, 'db_status' => $dbStatus]);
 }
 ?>
