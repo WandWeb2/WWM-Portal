@@ -37,11 +37,14 @@ function handleGetBilling($pdo, $input, $secrets) {
             $invList[] = ['id' => $i['id'], 'number' => $i['number'] ?? 'DRAFT', 'client_name' => $clientName, 'amount' => number_format($i['total']/100, 2), 'status' => $i['status'], 'pdf' => $i['invoice_pdf'], 'date' => date('M d', $i['created']), 'date_ts' => $i['created']];
             $feed[] = ['id' => $i['id'], 'type' => 'invoice', 'title' => 'Invoice ' . ($i['number'] ?? 'Draft'), 'amount' => number_format($i['total'] / 100, 2), 'status' => $i['status'], 'date_ts' => $i['created'], 'date_display' => date('M d', $i['created'])];
         }
-        $rawQuotes = stripeRequest($secrets, 'GET', 'quotes?limit=20')['data'] ?? [];
+        $rawQuotes = stripeRequest($secrets, 'GET', 'quotes?limit=20&expand%5B%5D=data.customer')['data'] ?? [];
         $quotesList = [];
         foreach($rawQuotes as $q) {
-             $quotesList[] = ['id'=>$q['id'], 'number'=>$q['number']??'DRAFT', 'client_name'=>$q['customer_name']??$q['customer_email']??'Client', 'amount'=>number_format($q['amount_total']/100, 2), 'status'=>$q['status'], 'date_ts'=>$q['created']];
-             $feed[] = ['id'=>$q['id'], 'type'=>'quote', 'title'=>'Quote', 'amount'=>number_format($q['amount_total']/100, 2), 'status'=>$q['status'], 'date_ts'=>$q['created'], 'date_display'=>date('M d', $q['created'])];
+             // Extract name from expanded object
+             $clientName = $q['customer']['name'] ?? $q['customer']['email'] ?? 'Client';
+             
+             $quotesList[] = ['id'=>$q['id'], 'number'=>$q['number']??'DRAFT', 'client_name'=>$clientName, 'amount'=>number_format($q['amount_total']/100, 2), 'status'=>$q['status'], 'date_ts'=>$q['created']];
+             $feed[] = ['id'=>$q['id'], 'type'=>'quote', 'title'=>'Quote for '.$clientName, 'amount'=>number_format($q['amount_total']/100, 2), 'status'=>$q['status'], 'date_ts'=>$q['created'], 'date_display'=>date('M d', $q['created'])];
         }
         $rawSubs = stripeRequest($secrets, 'GET', "subscriptions?status=active&limit=20&expand%5B%5D=data.customer&expand%5B%5D=data.plan.product")['data'] ?? [];
         $subsList = [];
