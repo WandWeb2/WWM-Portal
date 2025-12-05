@@ -695,6 +695,96 @@ function handleDebugTest($pdo, $i, $secrets) {
                 logSystemEvent($pdo, "Permissions Audit ERROR: " . $e->getMessage(), 'error');
             }
             break;
+        
+        case 'check_php_errors':
+            // Check PHP error logs and display errors
+            $diagnostics['php_version'] = phpversion();
+            $diagnostics['display_errors'] = ini_get('display_errors');
+            $diagnostics['error_reporting'] = error_reporting();
+            $diagnostics['log_errors'] = ini_get('log_errors');
+            $diagnostics['error_log'] = ini_get('error_log');
+            
+            logSystemEvent($pdo, "=== PHP ERROR CHECK ===", 'info');
+            logSystemEvent($pdo, "PHP Version: " . phpversion(), 'info');
+            logSystemEvent($pdo, "Display Errors: " . ini_get('display_errors'), 'info');
+            logSystemEvent($pdo, "Error Reporting Level: " . error_reporting(), 'info');
+            
+            // Check for recent PHP errors in log file
+            $errorLog = ini_get('error_log');
+            if ($errorLog && file_exists($errorLog)) {
+                $recentErrors = array_slice(file($errorLog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES), -10);
+                logSystemEvent($pdo, "Recent PHP Errors (last 10):", 'warning');
+                foreach ($recentErrors as $err) {
+                    logSystemEvent($pdo, "  " . $err, 'error');
+                }
+            } else {
+                logSystemEvent($pdo, "No PHP error log file found or accessible", 'info');
+            }
+            
+            $result = "PHP Error Check: Completed - See logs for details";
+            logSystemEvent($pdo, $result, 'success');
+            break;
+        
+        case 'check_json_output':
+            // Test that JSON output is clean
+            ob_start();
+            echo json_encode(['test' => 'value', 'timestamp' => date('Y-m-d H:i:s')]);
+            $output = ob_get_clean();
+            
+            $diagnostics['test_json'] = $output;
+            $diagnostics['json_valid'] = json_decode($output) !== null;
+            
+            logSystemEvent($pdo, "=== JSON OUTPUT TEST ===", 'info');
+            logSystemEvent($pdo, "Test JSON: " . $output, 'info');
+            logSystemEvent($pdo, "JSON Valid: " . ($diagnostics['json_valid'] ? 'YES' : 'NO'), $diagnostics['json_valid'] ? 'success' : 'error');
+            
+            // Check output buffering
+            $diagnostics['ob_level'] = ob_get_level();
+            $diagnostics['ob_handlers'] = ob_list_handlers();
+            logSystemEvent($pdo, "Output Buffer Level: " . ob_get_level(), 'info');
+            logSystemEvent($pdo, "Output Handlers: " . implode(', ', ob_list_handlers()), 'info');
+            
+            $result = "JSON Output Check: " . ($diagnostics['json_valid'] ? '✓ CLEAN' : '✗ CORRUPTED');
+            logSystemEvent($pdo, $result, $diagnostics['json_valid'] ? 'success' : 'error');
+            break;
+        
+        case 'check_includes':
+            // Check that all required files are included and readable
+            $requiredFiles = [
+                'secrets.php' => [
+                    __DIR__ . '/../../private/secrets.php',
+                    $_SERVER['DOCUMENT_ROOT'] . '/../private/secrets.php',
+                    '/workspaces/WWM-Portal/private/secrets.php'
+                ],
+                'auth.php' => [__DIR__ . '/auth.php'],
+                'utils.php' => [__DIR__ . '/utils.php'],
+                'clients.php' => [__DIR__ . '/clients.php'],
+                'projects.php' => [__DIR__ . '/projects.php'],
+                'billing.php' => [__DIR__ . '/billing.php'],
+                'files.php' => [__DIR__ . '/files.php']
+            ];
+            
+            logSystemEvent($pdo, "=== FILE INCLUDES CHECK ===", 'info');
+            
+            foreach ($requiredFiles as $name => $paths) {
+                $found = false;
+                foreach ($paths as $path) {
+                    if (file_exists($path)) {
+                        logSystemEvent($pdo, "✓ $name: Found at $path", 'success');
+                        $diagnostics['files'][$name] = ['status' => 'found', 'path' => $path, 'readable' => is_readable($path), 'size' => filesize($path)];
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    logSystemEvent($pdo, "✗ $name: NOT FOUND (checked " . count($paths) . " locations)", 'error');
+                    $diagnostics['files'][$name] = ['status' => 'missing', 'checked' => $paths];
+                }
+            }
+            
+            $result = "File Includes Check: Completed";
+            logSystemEvent($pdo, $result, 'success');
+            break;
             
         default:
             $result = "Unknown test: $test";

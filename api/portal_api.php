@@ -21,9 +21,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit();
 register_shutdown_function(function() {
     $error = error_get_last();
     if ($error && ($error['type'] === E_ERROR || $error['type'] === E_PARSE)) {
+        // Log to file for debugging
+        error_log("[FATAL ERROR] " . json_encode($error), 3, '/tmp/wandweb_api_fatal.log');
         ob_clean(); 
-        echo json_encode(['status' => 'error', 'message' => "Critical Server Error: " . $error['message']]);
+        echo json_encode(['status' => 'error', 'message' => "Critical Server Error: " . $error['message'], 'file' => $error['file'], 'line' => $error['line']]);
         exit();
+    }
+    // Also check if output buffer is empty (might indicate early exit without response)
+    if (ob_get_length() === 0) {
+        error_log("[WARNING] Empty response buffer", 3, '/tmp/wandweb_api_fatal.log');
     }
 });
 
@@ -189,6 +195,12 @@ try {
     
     // 2. Clear Buffer and Return JSON
     ob_clean(); 
-    echo json_encode(['status' => 'error', 'message' => 'System Error: ' . $e->getMessage()]);
+    echo json_encode(['status' => 'error', 'message' => 'System Error: ' . $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+    exit();
 }
+
+// FINAL SAFETY: If we somehow get here without exiting, return error
+ob_clean();
+echo json_encode(['status' => 'error', 'message' => 'API completed without response']);
+exit();
 ?>

@@ -2064,7 +2064,9 @@ window.StandaloneDebugPanel = ({ token }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'get_system_logs', token })
             });
-            const data = await response.json();
+            const responseText = await response.text();
+            console.log('[StandaloneDebug] Raw response:', responseText);
+            const data = JSON.parse(responseText);
             console.log('[StandaloneDebug] Logs loaded:', data);
             
             if (data.status === 'success' && data.logs) {
@@ -2100,7 +2102,9 @@ window.StandaloneDebugPanel = ({ token }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'debug_test', token, test: testName })
             });
-            const data = await response.json();
+            const responseText = await response.text();
+            console.log(`[StandaloneDebug] Raw response for ${testName}:`, responseText);
+            const data = JSON.parse(responseText);
             console.log(`[StandaloneDebug] Test result:`, data);
             
             // Add result to logs immediately
@@ -2167,10 +2171,10 @@ window.StandaloneDebugPanel = ({ token }) => {
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     <button 
-                        onClick={() => runTest('api_connection', 'API Status')}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
+                        onClick={() => runTest('check_php_errors', 'PHP Errors')}
+                        className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
                     >
-                        ✓ API Status
+                        🚨 PHP Errors
                     </button>
                     <button 
                         onClick={() => runTest('database_status', 'Database')}
@@ -2179,41 +2183,40 @@ window.StandaloneDebugPanel = ({ token }) => {
                         🔌 Database
                     </button>
                     <button 
-                        onClick={() => runTest('emergency_status', 'Emergency')}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
+                        onClick={() => runTest('api_connection', 'API Status')}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
                     >
-                        ⚠️ Emergency
+                        ✓ API Status
                     </button>
                     <button 
-                        onClick={() => runTest('permissions_audit', 'Permissions')}
+                        onClick={() => runTest('check_json_output', 'JSON Output')}
+                        className="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
+                    >
+                        📋 JSON Output
+                    </button>
+                    <button 
+                        onClick={() => runTest('permissions_audit', 'File Perms')}
                         className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
                     >
-                        👥 Permissions
+                        📁 File Perms
                     </button>
                     <button 
-                        onClick={() => runTest('rebuild_partners', 'Rebuild')}
+                        onClick={() => runTest('check_includes', 'File Includes')}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
+                    >
+                        📦 Includes
+                    </button>
+                    <button 
+                        onClick={() => runTest('rebuild_partners', 'Rebuild Data')}
                         className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
                     >
-                        🔄 Rebuild Partners
-                    </button>
-                    <button 
-                        onClick={() => runTest('resync_user_59', 'User #59')}
-                        className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
-                    >
-                        🔍 Check User #59
-                    </button>
-                    <button 
-                        onClick={loadLogs}
-                        disabled={loading}
-                        className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors disabled:opacity-50"
-                    >
-                        {loading ? '⏳' : '🔄'} Refresh Logs
+                        🔄 Rebuild Data
                     </button>
                     <button 
                         onClick={logManualEvent}
                         className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-2 rounded text-xs font-bold transition-colors"
                     >
-                        📝 Log Event
+                        📝 Test Log
                     </button>
                 </div>
             </div>
