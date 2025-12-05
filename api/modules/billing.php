@@ -1,8 +1,10 @@
 <?php
-// /api/modules/billing.php
-// Version: 15.4 - Redeclaration Fix via Function Check
+// =============================================================================
+// Wandering Webmaster Custom Component
+// Version: 15.5 - CRITICAL FIX: Function Wrapper
+// =============================================================================
 
-// Only define functions if they don't exist yet
+// PREVENT REDECLARATION CRASH
 if (!function_exists('getOrSyncStripeId')) {
 
     function getOrSyncStripeId($pdo, $user_id, $stripe_id = null) {
