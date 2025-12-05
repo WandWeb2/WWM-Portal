@@ -32,6 +32,8 @@ function getDBConnection($secrets) {
     }
 }
 
+// --- SQL POLYFILL (Fixes the Crash) ---
+
 function getSqlType($pdo, $type) {
     $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
     
@@ -63,6 +65,8 @@ function verifyAuth($input) {
     $parts = explode('.', $input['token']);
     return json_decode(base64_decode($parts[0]), true);
 }
+
+// --- SCHEMA FUNCTIONS ---
 
 function ensureUserSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
@@ -153,6 +157,7 @@ function stripeRequest($secrets, $method, $endpoint, $data = []) {
     
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     $result = curl_exec($ch);
     curl_close($ch);
     return json_decode($result, true);
