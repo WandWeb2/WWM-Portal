@@ -108,14 +108,16 @@ function handleFixUserAccount($pdo, $i, $s) {
     }
 }
 
-// [AI] Handler
-function handleAI($pdo, $i, $s) {
+// [AI] Handler - Corrected Name for Router Mapping
+function handleAiRequest($pdo, $i, $s) {
     $user = verifyAuth($i);
-    // Check Config
+    
+    // 1. Config Check
     if (empty($s['GEMINI_API_KEY'])) {
         sendJson('success', 'AI', ['text' => 'Config Error: GEMINI_API_KEY is missing in secrets.php.']);
     }
 
+    // 2. Build Context
     $websiteContext = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Website data unavailable.";
     $dashboardContext = isset($i['data_context']) ? json_encode($i['data_context']) : "No active dashboard data.";
 
@@ -128,25 +130,28 @@ function handleAI($pdo, $i, $s) {
 
     $systemPrompt = ($user['role'] === 'admin') ? $basePrompt . "\n USER IS EXECUTIVE." : $basePrompt . "\n USER IS CLIENT.";
     
-    // Call API
-    $d = callGeminiAI($pdo, $s, $systemPrompt, $i['prompt']);
+    // 3. Call API with Error Catching
+    try {
+        $d = callGeminiAI($pdo, $s, $systemPrompt, $i['prompt']);
+    } catch (Exception $e) {
+        error_log("[HandleAiRequest] Exception: " . $e->getMessage());
+        sendJson('success', 'AI', ['text' => "System Error: " . $e->getMessage()]);
+    }
 
-    // DEBUG: Capture specific API errors
+    // 4. Debug API Response
     if (isset($d['error'])) {
         $errCode = $d['error']['code'] ?? 'Unknown';
         $errMsg = $d['error']['message'] ?? 'Unknown API Error';
-        $fullError = "AI Error ($errCode): $errMsg";
-        error_log("[HandleAI] " . $fullError);
-        sendJson('success', 'AI', ['text' => $fullError]);
+        error_log("[HandleAiRequest] API Error: $errMsg");
+        sendJson('success', 'AI', ['text' => "AI Error ($errCode): $errMsg"]);
     }
 
-    // Default Success Path
+    // 5. Success Path
     $text = $d['candidates'][0]['content']['parts'][0]['text'] ?? null;
 
-    // Fallback if no text but no error (e.g. Empty response)
     if (!$text) {
-        $text = 'System offline. (Empty response from Model)';
-        error_log("[HandleAI] Empty response: " . json_encode($d));
+        error_log("[HandleAiRequest] Empty response: " . json_encode($d));
+        $text = 'System offline. (Model returned empty response)';
     }
 
     if (stripos($text, '[ACTION:OPEN_TICKET]') !== false) {
