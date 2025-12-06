@@ -140,12 +140,24 @@ function getSetting($pdo, $key, $default = '') {
 }
 
 function logSystemEvent($pdo, $message, $level = 'info') {
+    // 1. Try Database Log
     try {
         ensureLogSchema($pdo);
         $stmt = $pdo->prepare("INSERT INTO system_logs (level, message) VALUES (?, ?)");
         $stmt->execute([$level, $message]);
     } catch (Exception $e) {
-        error_log("WANDWEB LOG: $message");
+        // DB Failed - Silent fail here, proceed to file
+    }
+
+    // 2. Guaranteed File Fallback (Persistence)
+    // Writes to a temp file that survives DB crashes
+    try {
+        $logFile = sys_get_temp_dir() . '/wandweb_system.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $entry = "[$timestamp] [$level] $message" . PHP_EOL;
+        file_put_contents($logFile, $entry, FILE_APPEND);
+    } catch (Exception $e) {
+        error_log("WWM CRITICAL LOG FAILURE: " . $e->getMessage());
     }
 }
 

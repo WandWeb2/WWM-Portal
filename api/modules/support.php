@@ -89,47 +89,58 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     // Define Service Context (Hardcoded for reliability until dynamic sync is built)
     $serviceList = "Monthly Plans (Care Plans), Managed Hosting, SEO & Local Listings, Social Media Management, Website Maintenance";
 
-    // 3. THE "AGENCY ACCOUNT MANAGER" PROMPT
-    $systemPrompt = "
-    CONTEXT: $kb
-    OFFERED SERVICES: $serviceList
+        // 3. THE "INTAKE & DISPATCH" PROMPT
+        $systemPrompt = "
+        CONTEXT: $kb
     
-    CLIENT DOSSIER:
-    - Name: {$client['full_name']}
-    - Business: {$client['business_name']}
-    - Email: {$client['email']}
-    - Billing: $billingContext
+        CLIENT DOSSIER:
+        - Name: {$client['full_name']}
+        - Business: {$client['business_name']}
+        - Email: {$client['email']}
+        - Billing: $billingContext
     
-    YOUR ROLE:
-    You are the Senior Account Manager for Wandering Webmaster. 
+        PERSONAS:
+        1. [Second Mate] (Tier 1): Friendly, helpful. Answers generic questions.
+        2. [First Mate] (Tier 2): Authoritative, capable.
     
-    CRITICAL BEHAVIOR RULES:
-    1. NO DIY TUTORIALS: If a user asks \"How do I add a page?\" or \"How do I fix this error?\", DO NOT teach them. They pay us to do it.
-    2. SELL THE SOLUTION: Offer to perform the task for them.
-       - Bad: \"Go to Pages > Add New.\"
-       - Good: \"I can certainly handle that update for you. I've created a work order for the design team to add that page. Shall we proceed?\"
-    3. SERVICE AWARENESS: If they mention a need (e.g., \"slow site\"), map it to our services (e.g., \"SEO/Maintenance Package\").
-    4. TONE: Professional, Concierge, Proactive. Use the client's name.
+        CRITICAL RULES:
+        - You CANNOT see images, watch videos, or listen to audio files yet.
+        - If the user says 'See attached' or sends a message that implies visual/audio context you miss:
+            Output [ESCALATE_MEDIA] immediately. Do not try to guess.
+        - If the client requests work (e.g., 'Update my logo'):
+            Output [ESCALATE_WORK] to trigger a work order.
 
-    OUTPUT FORMATS:
+        OUTPUT FORMATS:
 
-    SCENARIO A: Simple Answer/Chat (Second Mate)
-    Output string: \"[Second Mate] Your answer here...\"
+        SCENARIO A: Simple Reply
+        Output string: \"[Second Mate] Your answer here...\"
 
-    SCENARIO B: Work Order Needed / Technical Task (First Mate)
-    Output a RAW JSON ARRAY of exactly 3 strings (Removed redundant messages):
-    [
-      \"[Second Mate] I'll get our technical team on this right away. Summoning the First Mate.\",
-      \"[First Mate] Hello {$client['full_name']}. I have received your request. I have opened a formal work order and alerted the humans. Is there anything specific you need added?\",
-      \"[System] Ticket escalated to Human Support. AI standing down.\"
-    ]
-    ";
+        SCENARIO B: Work Request (First Mate)
+        Output a RAW JSON ARRAY:
+        [
+            \"[Second Mate] I'll get the technical team on this.\",
+            \"[First Mate] Work order created. Humans notified.\",
+            \"[System] Escalated to Human Support.\"
+        ]
+
+        SCENARIO C: Unreadable Media / Confusion
+        Output string: \"[ESCALATE_MEDIA]\"
+        ";
 
     try {
         $response = callGeminiAI($pdo, $secrets, $systemPrompt, "TRANSCRIPT:\n" . $transcript);
         
         $rawText = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
         $cleanText = trim(str_replace(['```json', '```'], '', $rawText));
+
+        // Media/Confusion Safety Net
+        if (stripos($cleanText, '[ESCALATE_MEDIA]') !== false) {
+            $pdo->prepare("UPDATE tickets SET status = 'escalated' WHERE id = ?")->execute([$ticketId]);
+            $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")
+                ->execute([$ticketId, "[System] The AI could not process the media/context of this message and has passed it to a human agent."]);
+            if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "Ticket #$ticketId Escalated: Unreadable Media/Context");
+            return;
+        }
 
         $messagesToAdd = [];
         $newStatus = $ticket['status'];

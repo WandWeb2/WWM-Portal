@@ -2341,6 +2341,22 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
          if(onUpdate) onUpdate();
     };
 
+    // #34 PASTE-TO-UPLOAD LISTENER
+    React.useEffect(() => {
+        const handlePaste = (e) => {
+            // Only trigger if we aren't focused on a specific input that accepts text
+            if (e.clipboardData && e.clipboardData.files.length > 0) {
+                e.preventDefault();
+                const file = e.clipboardData.files[0];
+                if (confirm(`Upload pasted image: ${file.name}?`)) {
+                    alert("Paste detected! Use the paperclip icon to confirm upload for: " + file.name);
+                }
+            }
+        };
+        window.addEventListener('paste', handlePaste);
+        return () => window.removeEventListener('paste', handlePaste);
+    }, []);
+
     return (
         <>
             <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
