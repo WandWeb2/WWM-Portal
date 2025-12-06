@@ -79,6 +79,18 @@ try {
         case 'get_billing_overview': handleGetBilling($pdo, $input, $secrets); break;
         case 'refund_payment': handleRefund($pdo, $input, $secrets); break;
         
+        // Project Management
+        case 'create_project': handleCreateProject($pdo, $input, $secrets); break;
+        case 'assign_project_manager': handleAssignProjectManager($pdo, $input); break;
+        case 'update_project_status': handleUpdateProjectStatus($pdo, $input); break;
+        case 'get_project_details': handleGetProjectDetails($pdo, $input); break;
+        case 'save_task': handleSaveTask($pdo, $input); break;
+        case 'get_tasks': handleGetTasks($pdo, $input); break;
+        case 'toggle_task': handleToggleTask($pdo, $input); break;
+        case 'delete_project': handleDeleteProject($pdo, $input); break;
+        case 'save_comment': handleSaveComment($pdo, $input); break;
+        case 'ai_create_project': handleAICreateProject($pdo, $input, $secrets); break;
+        
         // Standard Handlers
         case 'get_files': handleGetFiles($pdo, $input); break;
         case 'upload_file': handleUploadFile($pdo, $input, $secrets); break;

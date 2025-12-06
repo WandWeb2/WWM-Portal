@@ -105,8 +105,9 @@ function handleUploadFile($pdo, $i, $secrets) {
     $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, uploader_id INTEGER, filename TEXT, external_url TEXT, file_type TEXT, filesize INTEGER, project_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
         ->execute([$clientId, $u['uid'], $filename, $driveId, $mime, $size, $pid]);
-
-    sendJson('success', 'File Saved');
+    
+    $fileId = $pdo->lastInsertId();
+    sendJson('success', 'File Saved', ['file_id' => $fileId, 'filename' => $filename, 'file_type' => $mime]);
 }
 
 function handleDownloadFile($pdo, $i, $secrets) {

@@ -227,6 +227,13 @@ function notifyAllAdminsForProject($pdo, $projectId, $message) {
     }
 }
 
+function notifyAllAdminsForEscalation($pdo, $ticketId, $message) {
+    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
+    foreach ($stmt->fetchAll() as $admin) {
+        createNotification($pdo, $admin['id'], $message, 'ticket', $ticketId);
+    }
+}
+
 // --- GOOGLE & AI ---
 
 function getGoogleAccessToken($secrets) {

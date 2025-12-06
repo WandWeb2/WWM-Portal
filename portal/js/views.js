@@ -2250,8 +2250,8 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         </span>
                     )}
                     {uploading && <span className="text-xs text-slate-500 flex items-center gap-1"><Icons.Loader className="animate-spin" size={14}/> Uploading...</span>}
-                    {ticket.status === 'closed' && <span className="text-xs text-red-500">Ticket is closed. Re-open to reply.</span>}
                 </div>
+                {ticket.status !== 'closed' ? (
                 <div className="flex gap-3">
                     <textarea value={reply} onChange={e=>setReply(e.target.value)} className={`flex-1 p-3 border rounded-lg focus:ring-2 outline-none ${isInternal ? 'bg-yellow-100 border-yellow-200 focus:ring-yellow-400' : 'focus:ring-[#2493a2]'}`} placeholder="Type your reply..." rows={3} disabled={ticket.status==='closed'}></textarea>
                     <div className="flex flex-col gap-2 w-40">
@@ -2264,6 +2264,11 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         {isAdmin && <button type="button" onClick={handleConvertToProject} className="px-4 py-2 rounded-lg border text-xs">Convert to Project</button>}
                     </div>
                 </div>
+                ) : (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+                    <p className="text-sm font-semibold text-red-600">Ticket is closed. Re-open to reply.</p>
+                </div>
+                )}
             </form>
         </div>
     );

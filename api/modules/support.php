@@ -143,7 +143,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
             $pdo->prepare("UPDATE tickets SET status = 'escalated' WHERE id = ?")->execute([$ticketId]);
             $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")
                 ->execute([$ticketId, "[System] The AI could not process the media/context of this message and has passed it to a human agent."]);
-            if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "Ticket #$ticketId Escalated: Unreadable Media/Context");
+            notifyAllAdminsForEscalation($pdo, $ticketId, "Ticket #$ticketId Escalated: Unreadable Media/Context");
             return;
         }
 
@@ -161,7 +161,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
                 // Notify Humans
                 $fullResponse = implode(" ", $script);
                 if (stripos($fullResponse, 'humans') !== false) {
-                    if (function_exists('notifyAllAdmins')) notifyAllAdmins($pdo, "First Mate Requesting Action on Ticket #$ticketId");
+                    notifyAllAdminsForEscalation($pdo, $ticketId, "First Mate Requesting Action on Ticket #$ticketId");
                 }
             }
         } 
@@ -185,6 +185,9 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
 
         if ($newStatus !== $ticket['status']) {
             $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$newStatus, $ticketId]);
+            if ($newStatus === 'escalated') {
+                notifyAllAdminsForEscalation($pdo, $ticketId, "Ticket #$ticketId Escalated to Human Support");
+            }
         }
 
     } catch (Exception $e) {
