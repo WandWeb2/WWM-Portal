@@ -1,6 +1,6 @@
 <?php
 // /api/modules/clients.php
-// Version: 34.0 - EMERGENCY FIX (Clean File)
+// Version: 34.1 - VERBOSE AI DEBUGGING
 
 // [HELPER] Sync local user data to Stripe & CRM
 function syncClientToExternal($pdo, $uid, $secrets) {
@@ -111,7 +111,10 @@ function handleFixUserAccount($pdo, $i, $s) {
 // [AI] Handler
 function handleAI($pdo, $i, $s) {
     $user = verifyAuth($i);
-    if (empty($s['GEMINI_API_KEY'])) sendJson('success', 'AI', ['text' => 'Config Error: API Key missing.']);
+    // Check Config
+    if (empty($s['GEMINI_API_KEY'])) {
+        sendJson('success', 'AI', ['text' => 'Config Error: GEMINI_API_KEY is missing in secrets.php.']);
+    }
 
     $websiteContext = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Website data unavailable.";
     $dashboardContext = isset($i['data_context']) ? json_encode($i['data_context']) : "No active dashboard data.";
@@ -125,8 +128,26 @@ function handleAI($pdo, $i, $s) {
 
     $systemPrompt = ($user['role'] === 'admin') ? $basePrompt . "\n USER IS EXECUTIVE." : $basePrompt . "\n USER IS CLIENT.";
     
+    // Call API
     $d = callGeminiAI($pdo, $s, $systemPrompt, $i['prompt']);
-    $text = $d['candidates'][0]['content']['parts'][0]['text'] ?? 'System offline.';
+
+    // DEBUG: Capture specific API errors
+    if (isset($d['error'])) {
+        $errCode = $d['error']['code'] ?? 'Unknown';
+        $errMsg = $d['error']['message'] ?? 'Unknown API Error';
+        $fullError = "AI Error ($errCode): $errMsg";
+        error_log("[HandleAI] " . $fullError);
+        sendJson('success', 'AI', ['text' => $fullError]);
+    }
+
+    // Default Success Path
+    $text = $d['candidates'][0]['content']['parts'][0]['text'] ?? null;
+
+    // Fallback if no text but no error (e.g. Empty response)
+    if (!$text) {
+        $text = 'System offline. (Empty response from Model)';
+        error_log("[HandleAI] Empty response: " . json_encode($d));
+    }
 
     if (stripos($text, '[ACTION:OPEN_TICKET]') !== false) {
         $clean = trim(str_ireplace('[ACTION:OPEN_TICKET]', '', $text));
