@@ -270,284 +270,6 @@ const TaskManager = ({ project, token, role, onClose }) => {
     );
 };
 
-const ServiceCard = ({ product, isAdmin, onBuy, onEdit, onDelete, onToggleVisibility }) => {
-    const Icons = window.Icons;
-    const [selectedPriceIdx, setSelectedPriceIdx] = React.useState(0);
-    if (!product || !product.prices || product.prices.length === 0) return null;
-    const price = product.prices[selectedPriceIdx] || product.prices[0];
-    const isHidden = product.is_hidden;
-    const actionLabel = price.interval !== 'one-time' ? 'Subscribe' : 'Buy';
-    return (
-        <div className={`bg-white p-6 rounded-xl border hover:border-[#dba000] relative group transition-all ${isHidden ? 'opacity-60 bg-slate-50' : ''}`}>
-            {isAdmin && (<div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white p-1 rounded shadow z-10"><button onClick={() => onToggleVisibility(product.id, isHidden)} className="text-slate-500 hover:text-[#2c3259]" title={isHidden ? "Show" : "Hide"}>{isHidden ? <Icons.EyeOff size={16}/> : <Icons.Eye size={16}/>}</button><button onClick={() => onEdit(product)} className="text-slate-400 hover:text-blue-500"><Icons.Edit size={16}/></button><button onClick={() => onDelete(product.id)} className="text-slate-400 hover:text-red-500"><Icons.Trash size={16}/></button></div>)}
-            {product.image && <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded-lg mb-4" />}
-            <h3 className="font-bold text-lg text-[#2c3259]">{product.name}</h3><p className="text-sm text-slate-500 mb-4 line-clamp-2">{product.description}</p>
-            {product.prices.length > 1 && (<div className="flex gap-2 mb-4 overflow-x-auto pb-2">{product.prices.map((p, idx) => (<button key={p.id} onClick={() => setSelectedPriceIdx(idx)} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${selectedPriceIdx === idx ? 'bg-[#2c3259] text-white border-[#2c3259]' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{p.interval === 'one-time' ? 'Once' : p.interval}</button>))}</div>)}
-            <div className="flex justify-between items-center mt-auto pt-4 border-t border-slate-100"><div><span className="font-bold text-xl">${price.amount}</span><span className="text-xs text-slate-400 font-normal ml-1">{price.currency} {price.interval!=='one-time'?'/'+price.interval:''}</span></div>{!isAdmin && <button onClick={() => onBuy(price.id, price.interval)} className="bg-[#dba000] hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm">{actionLabel}</button>}</div>
-        </div>
-    );
-};
-
-const ServiceSortModal = ({ services, onClose, onSave }) => {
-    const Icons = window.Icons;
-    const [items, setItems] = React.useState(Object.keys(services || {}).sort().map((cat, i) => ({ id: `cat_${cat}`, label: cat, type: 'category', index: i, children: (services[cat] || []).map((p, pi) => ({ id: p.id, label: p.name, type: 'product', index: pi })) })));
-    const [draggedItem, setDraggedItem] = React.useState(null); 
-    const [draggedParent, setDraggedParent] = React.useState(null);
-    
-    const onDragStart = (e, item, parentIdx = null) => { setDraggedItem(item); setDraggedParent(parentIdx); e.dataTransfer.effectAllowed = "move"; };
-    const onDragOver = (e, index, parentIdx = null) => { 
-        e.preventDefault(); 
-        if (!draggedItem) return; 
-        if (draggedItem.type === 'category' && parentIdx === null && draggedParent === null) { 
-            if (draggedItem.index === index) return; 
-            const newItems = arrayMove(items, draggedItem.index, index); 
-            newItems.forEach((item, idx) => item.index = idx); 
-            setItems(newItems); setDraggedItem({ ...draggedItem, index }); 
-        } 
-        if (draggedItem.type === 'product' && parentIdx !== null && parentIdx === draggedParent) { 
-            if (draggedItem.index === index) return; 
-            const newItems = [...items]; 
-            const category = newItems[parentIdx]; 
-            category.children = arrayMove(category.children, draggedItem.index, index); 
-            category.children.forEach((item, idx) => item.index = idx); 
-            setItems(newItems); setDraggedItem({ ...draggedItem, index }); 
-        }
-    };
-    const handleSave = () => { 
-        const orderList = []; 
-        items.forEach((cat, cIdx) => { 
-            orderList.push({ key: cat.id, index: cIdx }); 
-            cat.children.forEach((prod, pIdx) => { orderList.push({ key: prod.id, index: pIdx }); }); 
-        }); 
-        onSave(orderList); 
-    };
-    return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-xl w-full max-w-lg h-[80vh] flex flex-col">
-                <div className="p-4 border-b flex justify-between items-center"><h3 className="font-bold text-lg">Arrange Services</h3><button onClick={onClose}><Icons.Close/></button></div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50">{items.map((cat, cIdx) => (<div key={cat.id} draggable onDragStart={(e) => onDragStart(e, cat)} onDragOver={(e) => onDragOver(e, cIdx)} className="bg-white border rounded-lg overflow-hidden shadow-sm"><div className="p-3 bg-slate-100 font-bold text-slate-700 cursor-move flex gap-2 items-center"><Icons.Menu size={16} className="text-slate-400"/> {cat.label}</div><div className="p-2 space-y-1">{cat.children.map((prod, pIdx) => (<div key={prod.id} draggable onDragStart={(e) => { e.stopPropagation(); onDragStart(e, prod, cIdx); }} onDragOver={(e) => { e.stopPropagation(); onDragOver(e, pIdx, cIdx); }} className="p-2 bg-white border rounded flex gap-2 items-center text-sm cursor-move hover:bg-slate-50"><Icons.Menu size={14} className="text-slate-300"/> {prod.label}</div>))}</div></div>))}</div>
-                <div className="p-4 border-t"><button onClick={handleSave} className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold">Save Order</button></div>
-            </div>
-        </div>
-    );
-};
-
-// --- GLOBAL VIEWS (Attached to Window for App.js) ---
-
-window.ClientAdminModal = ({ token, client, onClose, onUpdate }) => {
-    const Icons = window.Icons;
-    const [tab, setTab] = React.useState('profile');
-    const [details, setDetails] = React.useState(null);
-    const [loading, setLoading] = React.useState(true);
-    const [allClients, setAllClients] = React.useState([]); // For assignment dropdown
-    const [assignId, setAssignId] = React.useState(""); // For managed clients assignment
-
-    React.useEffect(() => {
-        setLoading(true);
-        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) })
-            .then(res => { if (res.status === 'success') setDetails(res); })
-            .finally(() => setLoading(false));
-    }, [client]);
-
-    const handleSaveProfile = async (e) => {
-        e.preventDefault();
-        const f = new FormData(e.target);
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_client', token, client_id: client.id, full_name: f.get('full_name'), business_name: f.get('business_name'), email: f.get('email'), phone: f.get('phone'), status: f.get('status') }) });
-        if (res.status === 'success') { onUpdate(); onClose(); } else alert(res.message);
-    };
-
-    const handlePromote = async () => {
-        const c = details?.client || client;
-        const newRole = c.role === 'partner' ? 'client' : 'partner';
-        if (confirm(`Change role to ${newRole.toUpperCase()}?`)) {
-            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_user_role', token, client_id: client.id, role: newRole }) });
-            if (res.status === 'success') { onUpdate(); onClose(); }
-        }
-    };
-
-    const handleAssign = async (targetId) => {
-        if (!targetId) return;
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_client_partner', token, partner_id: client.id, client_id: targetId }) });
-        if (res.status === 'success') {
-            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) }).then(res => setDetails(res));
-        }
-    };
-
-    const handleUnassign = async (targetId) => {
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_client_partner', token, partner_id: client.id, client_id: targetId, action_type: 'remove' }) });
-        if (res.status === 'success') {
-             window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_client_details', token, client_id: client.id }) }).then(res => setDetails(res));
-        }
-    };
-
-    // Fetch all clients unconditionally - the component always has this useEffect
-    React.useEffect(() => {
-        const c = details?.client || client;
-        if (details && c.role === 'partner') {
-            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) })
-                .then(res => setAllClients(res.clients || []));
-        }
-    }, [token, details, client]);
-
-    if (!details && loading) return <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"><div className="bg-white p-8 rounded-xl"><Icons.Loader/></div></div>;
-
-    const c = details?.client || client;
-    const invs = details?.invoices || [];
-    const subs = details?.subscriptions || [];
-    const projs = details?.projects || [];
-    const managed = details?.managed_clients || [];
-
-    return (
-        <div className="fixed inset-0 bg-[#2c3259]/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-fade-in">
-                <div className="bg-slate-50 border-b p-6 flex justify-between items-start">
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <h2 className="text-2xl font-bold text-[#2c3259]">{c.full_name}</h2>
-                            {c.role === 'partner' && <span className="bg-[#dba000] text-white text-[10px] px-2 py-1 rounded uppercase font-bold">Partner</span>}
-                        </div>
-                        <div className="text-sm text-slate-500 flex gap-2 mt-1"><span>{c.business_name}</span><span>•</span><span className="font-mono text-slate-400">{c.email}</span></div>
-                    </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><Icons.Close/></button>
-                </div>
-                
-                <div className="flex border-b px-6 gap-6">
-                    {['profile', 'financials', 'projects', c.role === 'partner' ? 'managed clients' : null].filter(Boolean).map(t => (
-                        <button key={t} onClick={()=>setTab(t)} className={`py-4 text-sm font-bold border-b-2 capitalize transition-colors ${tab===t ? 'border-[#2c3259] text-[#2c3259]' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>{t}</button>
-                    ))}
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
-                    {tab === 'profile' && (
-                        <form onSubmit={handleSaveProfile} className="max-w-lg mx-auto space-y-6">
-                            <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Full Name</label><input name="full_name" defaultValue={c.full_name} className="w-full p-2 border rounded" required /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Status</label><select name="status" defaultValue={c.status} className="w-full p-2 border rounded"><option value="active">Active</option><option value="pending_invite">Pending Invite</option><option value="inactive">Inactive</option></select></div></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Email</label><input name="email" defaultValue={c.email} className="w-full p-2 border rounded" required /></div><div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Business</label><input name="business_name" defaultValue={c.business_name} className="w-full p-2 border rounded" /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Phone</label><input name="phone" defaultValue={window.formatPhone(c.phone)} className="w-full p-2 border rounded" /></div></div>
-                            <button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold shadow-lg hover:opacity-90">Save Changes</button>
-                            <div className="pt-6 border-t mt-6">
-                                <button type="button" onClick={handlePromote} className="text-xs text-blue-600 underline">
-                                    {c.role === 'partner' ? 'Demote to Standard Client' : 'Promote to Partner (Manager)'}
-                                </button>
-                            </div>
-                        </form>
-                    )}
-                    {tab === 'financials' && (<div className="space-y-8"><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Active Subscriptions</h3>{subs.length === 0 ? <p className="text-sm text-slate-400 italic">No active subscriptions found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Plan</th><th className="p-3">Amount</th><th className="p-3">Next Bill</th></tr></thead><tbody>{subs.map(s => <tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.plan}</td><td className="p-3">${s.amount}/{s.interval}</td><td className="p-3 text-slate-500">{s.next_bill}</td></tr>)}</tbody></table></div>}</div><div><h3 className="text-lg font-bold text-[#2c3259] mb-4">Invoice History</h3>{invs.length === 0 ? <p className="text-sm text-slate-400 italic">No invoices found.</p> : <div className="bg-white border rounded-lg overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Date</th><th className="p-3">#</th><th className="p-3">Amount</th><th className="p-3">Status</th><th className="p-3 text-right">PDF</th></tr></thead><tbody>{invs.map(i => <tr key={i.id} className="border-b"><td className="p-3 text-slate-500">{i.date}</td><td className="p-3 font-mono text-xs">{i.number}</td><td className="p-3 font-bold">${i.amount}</td><td className="p-3"><span className={`px-2 py-1 rounded text-[10px] uppercase font-bold ${i.status==='paid'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{i.status}</span></td><td className="p-3 text-right"><a href={i.pdf} target="_blank" className="text-blue-600 hover:underline">Download</a></td></tr>)}</tbody></table></div>}</div></div>)}
-                    {tab === 'projects' && (<div><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-[#2c3259]">Client Projects</h3></div>{projs.length === 0 ? <div className="p-8 text-center border-2 border-dashed rounded-lg text-slate-400">No projects found.</div> : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{projs.map(p => (<div key={p.id} className="bg-white p-4 rounded-lg border shadow-sm"><div className="flex justify-between mb-2"><h4 className="font-bold">{p.title}</h4><span className="text-xs bg-slate-100 px-2 py-1 rounded uppercase font-bold">{p.status}</span></div><div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden"><div className="h-full bg-[#dba000]" style={{width: p.health_score + '%'}}></div></div></div>))}</div>}</div>)}
-                    {tab === 'managed clients' && (
-                        <div>
-                            <div className="bg-blue-50 border border-blue-200 p-4 rounded mb-6 text-sm text-blue-800">
-                                This user is a <strong>Partner</strong>. They can view projects and tickets for the clients listed below.
-                            </div>
-                            <div className="mb-6 flex gap-2">
-                                <select 
-                                    value={assignId} 
-                                    onChange={(e) => setAssignId(e.target.value)} 
-                                    className="flex-1 p-2 border rounded"
-                                >
-                                    <option value="">Select a client to assign...</option>
-                                    {allClients.filter(ac => ac.id !== c.id && !managed.find(m => m.id === ac.id)).map(ac => (
-                                        <option key={ac.id} value={ac.id}>{ac.full_name} ({ac.business_name})</option>
-                                    ))}
-                                </select>
-                                <button 
-                                    onClick={() => { handleAssign(assignId); setAssignId(""); }} 
-                                    disabled={!assignId}
-                                    className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold disabled:opacity-50"
-                                >
-                                    Assign
-                                </button>
-                            </div>
-                            <div className="bg-white border rounded overflow-hidden">
-                                {managed.length === 0 ? <div className="p-6 text-center text-slate-400">No clients assigned yet.</div> : (
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="bg-slate-50 border-b"><tr><th className="p-3">Client</th><th className="p-3">Business</th><th className="p-3 text-right">Action</th></tr></thead>
-                                        <tbody>
-                                            {managed.map(m => (
-                                                <tr key={m.id} className="border-b">
-                                                    <td className="p-3 font-bold">{m.full_name}</td>
-                                                    <td className="p-3 text-slate-500">{m.business_name}</td>
-                                                    <td className="p-3 text-right"><button onClick={()=>handleUnassign(m.id)} className="text-red-500 hover:underline text-xs">Remove</button></td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-window.ClientsView = ({ token, role }) => { 
-    const Icons = window.Icons;
-    const [clients, setClients] = React.useState([]); 
-    const [loading, setLoading] = React.useState(true); 
-    const [show, setShow] = React.useState(false); 
-    const [selectedClient, setSelectedClient] = React.useState(null);
-    const [tab, setTab] = React.useState('manual');
-    const [searchValue, setSearchValue] = React.useState("");
-    const [filterValue, setFilterValue] = React.useState("all");
-    const [sortOrder, setSortOrder] = React.useState("newest");
-
-    if(role!=='admin') return <div className="p-10 text-center">Access Denied</div>; 
-    const fetchData = () => { window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) }).then(res => { if(res && res.status==='success') setClients(res.clients||[]); }).finally(()=>setLoading(false)); }; 
-    React.useEffect(() => { fetchData(); }, [token]); 
-    
-    const handleAddClient = async (e) => { 
-        e.preventDefault(); 
-        const f = new FormData(e.target); 
-        if (tab === 'invite') { 
-            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'send_onboarding_link', token, email: f.get('email') }) }); 
-            if(res.status==='success') { setShow(false); alert("Invite Sent"); } else alert(res.message); 
-        } else { 
-            const res = await window.safeFetch(API_URL, { 
-                method: 'POST', 
-                body: JSON.stringify({ 
-                    action: 'create_client', 
-                    token, 
-                    email: f.get('email'), 
-                    full_name: f.get('full_name'), 
-                    business_name: f.get('business_name'), 
-                    phone: f.get('phone'), 
-                    send_invite: f.get('send_invite') === 'on' 
-                }) 
-            }); 
-            if(res.status==='success') { setShow(false); fetchData(); } else alert(res.message); 
-        } 
-    }; 
-    if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>; 
-
-    // SORT & FILTER LOGIC
-    const filteredClients = clients.filter(c => {
-        const searchMatch = !searchValue || c.full_name.toLowerCase().includes(searchValue.toLowerCase()) || c.email.toLowerCase().includes(searchValue.toLowerCase());
-        const filterMatch = filterValue === 'all' || c.status === filterValue;
-        return searchMatch && filterMatch;
-    }).sort((a, b) => {
-        if (sortOrder === 'newest') return new Date(b.created_at) - new Date(a.created_at);
-        if (sortOrder === 'oldest') return new Date(a.created_at) - new Date(b.created_at);
-        if (sortOrder === 'alpha_asc') return a.full_name.localeCompare(b.full_name);
-        if (sortOrder === 'alpha_desc') return b.full_name.localeCompare(a.full_name);
-        return 0;
-    });
-
-    return (<div className="space-y-6 animate-fade-in"><div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"><h2 className="text-2xl font-bold text-[#2c3259]">Clients</h2><button onClick={()=>setShow(true)} className="bg-[#2493a2] text-white px-4 py-2 rounded font-bold flex items-center gap-2"><Icons.Plus size={16}/> Add Client</button></div>
-    
-    <window.FilterSortToolbar 
-        filterOptions={[{value:'all', label:'All Status'}, {value:'active', label:'Active'}, {value:'pending_invite', label:'Pending Invite'}, {value:'inactive', label:'Inactive'}]}
-        filterValue={filterValue} onFilterChange={setFilterValue}
-        sortOrder={sortOrder} onSortToggle={()=>setSortOrder(prev => {
-            if(prev === 'newest') return 'oldest';
-            if(prev === 'oldest') return 'alpha_asc';
-            if(prev === 'alpha_asc') return 'alpha_desc';
-            return 'newest';
-        })}
-        searchValue={searchValue} onSearchChange={setSearchValue}
-    />
-
-    <div className="bg-white rounded border overflow-hidden"><table className="w-full text-sm text-left"><thead className="bg-slate-50 border-b"><tr><th className="p-3">Name</th><th className="p-3">Email</th><th className="p-3">Status</th><th className="p-3 text-right">Manage</th></tr></thead><tbody>{filteredClients.length === 0 ? <tr><td colSpan="4" className="p-4 text-center text-slate-400">No clients found.</td></tr> : filteredClients.map(c=>(<tr key={c.id} className="border-b hover:bg-slate-50 cursor-pointer" onClick={()=>setSelectedClient(c)}><td className="p-3"><div className="font-bold text-slate-800">{c.full_name}</div><div className="text-xs text-slate-500">{c.business_name}</div></td><td className="p-3"><div>{c.email}</div><div className="text-xs text-slate-400">{window.formatPhone(c.phone)}</div></td><td className="p-3"><span className={`px-2 py-1 rounded text-xs uppercase font-bold border ${c.status==='active' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{c.status.replace('_', ' ')}</span></td><td className="p-3 text-right"><button className="text-blue-600 hover:text-blue-800 font-bold text-xs" onClick={(e) => { e.stopPropagation(); setSelectedClient(c); }}>View</button></td></tr>))}</tbody></table></div>{show && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>setShow(false)} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">Add New Client</h3><div className="flex gap-4 mb-4 border-b"><button onClick={()=>setTab('manual')} className={`pb-2 text-sm font-bold ${tab==='manual'?'border-b-2 border-[#2493a2] text-[#2c3259]':'text-slate-400'}`}>Manual Entry</button><button onClick={()=>setTab('invite')} className={`pb-2 text-sm font-bold ${tab==='invite'?'border-b-2 border-[#2493a2] text-[#2c3259]':'text-slate-400'}`}>Send Link Only</button></div><form onSubmit={handleAddClient} className="space-y-4"><input name="email" type="email" placeholder="Email Address *" className="w-full p-2 border rounded" required/>{tab === 'manual' && <><input name="full_name" type="text" placeholder="Full Name *" className="w-full p-2 border rounded" required/><input name="business_name" type="text" placeholder="Business Name" className="w-full p-2 border rounded"/><input name="phone" type="text" placeholder="Phone" className="w-full p-2 border rounded"/><div className="flex items-center gap-2"><input type="checkbox" name="send_invite" id="send_invite" /><label htmlFor="send_invite" className="text-sm text-slate-600">Send Invite Email Now?</label></div></>}<button className="w-full bg-[#2493a2] text-white p-2 rounded font-bold">{tab==='manual'?'Create Client':'Send Onboarding Link'}</button></form></div></div>}{selectedClient && <window.ClientAdminModal token={token} client={selectedClient} onClose={()=>setSelectedClient(null)} onUpdate={fetchData} />}</div>); 
-};
-
 window.SettingsView = ({ token, role }) => {
     const Icons = window.Icons;
     const isAdmin = role === 'admin';
@@ -2033,7 +1755,7 @@ window.SupportView = ({ token, role }) => {
                     {visibleTickets.length === 0 ? <div className="p-6 text-slate-400 text-center text-sm">{showClosed ? "No tickets found." : "No active tickets. Check 'View Closed'."}</div> : 
                     visibleTickets.map(t => (
                         <div key={t.id} onClick={()=>setActiveTicket(t)} 
-                             className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-colors ${activeTicket?.id === t.id ? 'bg-blue-50 border-l-4 border-l-[#2493a2]' : ''} ${t.status==='closed' ? 'opacity-60 bg-slate-50' : ''}`}>
+                             className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-colors ${activeTicket?.id === t.id ? 'bg-blue-50 border-l-4 border-l-[#2493a2]' : ''} ${t.status==='closed' ? 'opacity-60 bg-slate-50' : ''} ${(t.sentiment_score > 50 && t.status !== 'closed') ? 'border-l-4 border-l-red-500 bg-red-50/30' : ''}`}>
                             <div className="flex justify-between items-start mb-1">
                                 <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold ${t.status==='open'?'bg-green-100 text-green-700':(t.status==='closed'?'bg-slate-200 text-slate-500':'bg-orange-100 text-orange-700')}`}>{t.status}</span>
                                 <span className="text-[10px] text-slate-400">{new Date(t.created_at).toLocaleDateString()}</span>
@@ -2193,140 +1915,204 @@ window.CreateProjectModal = ({ clients = [], onClose, onSubmit, initialData, tok
 };
 const TicketThread = ({ ticket, token, role, onUpdate }) => {
     const Icons = window.Icons;
+    const isAdmin = role === 'admin';
     const [messages, setMessages] = React.useState([]);
-    const [reply, setReply] = React.useState("");
+    const [quickReplies, setQuickReplies] = React.useState([]);
+    const [reply, setReply] = React.useState(() => localStorage.getItem('ticket_draft_' + ticket.id) || "");
     const [isInternal, setIsInternal] = React.useState(false);
     const [isThinking, setIsThinking] = React.useState(false);
+    const [uploading, setUploading] = React.useState(false);
+    const [attachedFile, setAttachedFile] = React.useState(null);
+    const [isDragging, setIsDragging] = React.useState(false);
     const scrollRef = React.useRef(null);
-    const isAdmin = role === 'admin';
+    const fileInputRef = React.useRef(null);
 
-    // 1. Initial Load & Event Listener for "Typing"
+    const loadThread = React.useCallback(async () => {
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
+        if(res.status==='success') {
+            setMessages(res.messages || []);
+            setQuickReplies(res.quick_replies || []);
+        }
+    }, [ticket.id, token]);
+
+    // Initial load + AI typing listener
     React.useEffect(() => {
-        const loadThread = async () => {
-            const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
-            if(res.status==='success') setMessages(res.messages);
-        };
-        
-        // Listen for AI Typing Events
         const handleNewAiMsg = (e) => {
             const newMsg = e.detail;
             setMessages(prev => {
-                // Avoid duplicates
                 if (prev.some(m => m.id === newMsg.id)) return prev;
                 return [...prev, newMsg];
             });
-            // Scroll on new message
             if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
         };
 
         window.addEventListener('new_ai_msg', handleNewAiMsg);
-        loadThread(); // Initial load
+        loadThread();
 
         return () => window.removeEventListener('new_ai_msg', handleNewAiMsg);
-    }, [ticket.id]);
+    }, [loadThread]);
 
-    // 2. Polling for Admin Replies (Every 4s)
+    // Polling (skip while thinking)
     React.useEffect(() => {
         const poll = setInterval(async () => {
-            if (isThinking) return; // Don't poll while waiting for AI to reply
-            
+            if (isThinking) return;
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
             if (res.status === 'success') {
-                setMessages(prev => {
-                    // Only update if we have MORE messages (simple append check)
-                    if (res.messages.length > prev.length) {
-                        // If the new message is System/AI, let simulateTyping handle it? 
-                        // Ideally yes, but for simple polling, just update is fine.
-                        return res.messages; 
-                    }
-                    return prev;
-                });
+                setMessages(prev => res.messages.length > prev.length ? res.messages : prev);
+                if (res.quick_replies) setQuickReplies(res.quick_replies);
             }
         }, 4000);
         return () => clearInterval(poll);
-    }, [ticket.id, isThinking]);
+    }, [ticket.id, token, isThinking]);
 
-    // Scroll effect
+    // Scroll to bottom on new messages
     React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages]);
+
+    // Paste-to-upload listener
+    React.useEffect(() => {
+        const handlePaste = (e) => {
+            if (e.clipboardData && e.clipboardData.files.length > 0) {
+                e.preventDefault();
+                const file = e.clipboardData.files[0];
+                if (confirm(`Upload pasted image: ${file.name}?`)) {
+                    uploadAttachment(file);
+                }
+            }
+        };
+        window.addEventListener('paste', handlePaste);
+        return () => window.removeEventListener('paste', handlePaste);
+    }, []);
+
+    // Draft persistence
+    React.useEffect(() => {
+        localStorage.setItem('ticket_draft_' + ticket.id, reply);
+    }, [reply, ticket.id]);
+
+    React.useEffect(() => {
+        setReply(localStorage.getItem('ticket_draft_' + ticket.id) || "");
+    }, [ticket.id]);
+
+    const uploadAttachment = async (file) => {
+        setUploading(true);
+        const f = new FormData();
+        f.append('action', 'upload_file');
+        f.append('token', token);
+        f.append('file', file);
+        try {
+            const r = await fetch(API_URL, { method: 'POST', body: f });
+            const d = await r.json();
+            if (d.status === 'success') {
+                const fid = d.file_id || d.id || d.fileId;
+                if (!fid) {
+                    alert('Upload succeeded but no file id returned.');
+                } else {
+                    setAttachedFile({ id: fid, name: d.filename || file.name, type: d.file_type || file.type });
+                }
+            } else {
+                alert(d.message || 'Upload failed');
+            }
+        } catch (err) {
+            alert('Upload failed');
+        } finally {
+            setUploading(false);
+        }
+    };
 
     const handleSend = async (e) => {
         e.preventDefault();
         if(!reply.trim()) return;
-        
         const textToSend = reply;
         const tempId = 'temp-' + Date.now();
-        setReply(""); 
-        
-        // Optimistic Update (User Msg)
+        setReply("");
+
         const tempMsg = {
             id: tempId,
-            role: role, 
-            sender_id: 99999, 
+            role: role,
+            sender_id: 99999,
             message: textToSend,
-            created_at: new Date().toISOString()
+            created_at: new Date().toISOString(),
+            file_id: attachedFile?.id,
+            filename: attachedFile?.name,
+            file_type: attachedFile?.type
         };
         setMessages(prev => [...prev, tempMsg]);
         setIsThinking(true);
 
         try {
-            // Send
-            const sendRes = await window.safeFetch(API_URL, { 
-                method: 'POST', 
-                body: JSON.stringify({ action: 'reply_ticket', token, ticket_id: ticket.id, message: textToSend, is_internal: isInternal }) 
-            });
+            const body = { action: 'reply_ticket', token, ticket_id: ticket.id, message: textToSend, is_internal: isInternal };
+            if (attachedFile?.id) body.file_id = attachedFile.id;
+
+            const sendRes = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(body) });
 
             if (sendRes.status !== 'success') {
-                if (sendRes.message.includes('closed')) {
-                    alert("Ticket Closed");
+                if (sendRes.message && sendRes.message.includes('closed')) {
+                    alert('Ticket Closed');
                     if(onUpdate) onUpdate();
                     return;
                 }
-                throw new Error(sendRes.message);
+                throw new Error(sendRes.message || 'Send failed');
             }
 
-            // Update Status
             if (sendRes.new_status && sendRes.new_status !== ticket.status) {
                 ticket.status = sendRes.new_status;
                 if (onUpdate) onUpdate();
             }
 
-            // FETCH NEW THREAD BUT DO NOT RENDER YET
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_ticket_thread', token, ticket_id: ticket.id }) });
-            
+            setAttachedFile(null);
+            localStorage.removeItem('ticket_draft_' + ticket.id);
+
             if(res.status==='success') {
                 const allMsgs = res.messages;
-                // Calculate if there are new AI messages to type out
                 const realMsgs = messages.filter(m => m.id !== tempId);
                 const lastRealId = realMsgs.length > 0 ? realMsgs[realMsgs.length - 1].id : 0;
                 const newAiMsgs = allMsgs.filter(m => m.id > lastRealId && m.sender_id == 0);
 
-                // 1. Update list immediately (excluding new AI msgs to prevent double render)
                 const nonAiList = allMsgs.filter(m => m.sender_id != 0 || m.id <= lastRealId);
                 setMessages(nonAiList);
 
-                // 2. Trigger Typing Animation
                 if (newAiMsgs.length > 0) {
-                    // Keep 'isThinking' true UNTIL the typing finishes
                     window.simulateTyping(newAiMsgs, 50, () => {
-                        setIsThinking(false); // <--- Stop animation only after typing is done
-                        setMessages(allMsgs); // Final sync
+                        setIsThinking(false);
+                        setMessages(allMsgs);
                     });
                 } else {
                     setIsThinking(false);
                     setMessages(allMsgs);
                 }
+                if (res.quick_replies) setQuickReplies(res.quick_replies);
             }
         } catch (err) {
             console.error(err);
-            alert("Error: " + err.message);
+            alert('Error: ' + err.message);
             setIsThinking(false);
         }
     };
-    
+
     const handleClose = async () => {
-         if(!confirm("Close ticket?")) return;
+         if(!confirm('Close ticket?')) return;
          await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_ticket_status', token, ticket_id: ticket.id, status: 'closed' }) });
          if(onUpdate) onUpdate();
+    };
+
+    const handleReopen = async () => {
+         if(!confirm('Re-open ticket?')) return;
+         await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_ticket_status', token, ticket_id: ticket.id, status: 'open' }) });
+         if(onUpdate) onUpdate();
+    };
+
+    const handleSnooze = async () => {
+        const hours = prompt('Snooze for how many hours?', '4');
+        if (!hours) return;
+        const h = parseInt(hours, 10);
+        if (isNaN(h) || h <= 0) return alert('Enter a valid hour count.');
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'snooze_ticket', token, ticket_id: ticket.id, hours: h }) });
+        if (res.status === 'success') {
+            alert(res.message || 'Ticket snoozed');
+            if (onUpdate) onUpdate();
+        } else {
+            alert(res.message || 'Unable to snooze ticket');
+        }
     };
 
     const handleConvertToProject = () => {
@@ -2335,30 +2121,32 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
         window.dispatchEvent(new CustomEvent('open_project_modal', { detail: { client_id: ticket.user_id, notes: brief } }));
     };
 
-    const handleReopen = async () => {
-         if(!confirm("Re-open ticket?")) return;
-         await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'update_ticket_status', token, ticket_id: ticket.id, status: 'open' }) });
-         if(onUpdate) onUpdate();
+    const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
+    const handleDragLeave = () => setIsDragging(false);
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            uploadAttachment(e.dataTransfer.files[0]);
+        }
     };
 
-    // #34 PASTE-TO-UPLOAD LISTENER
-    React.useEffect(() => {
-        const handlePaste = (e) => {
-            // Only trigger if we aren't focused on a specific input that accepts text
-            if (e.clipboardData && e.clipboardData.files.length > 0) {
-                e.preventDefault();
-                const file = e.clipboardData.files[0];
-                if (confirm(`Upload pasted image: ${file.name}?`)) {
-                    alert("Paste detected! Use the paperclip icon to confirm upload for: " + file.name);
-                }
-            }
-        };
-        window.addEventListener('paste', handlePaste);
-        return () => window.removeEventListener('paste', handlePaste);
-    }, []);
+    const attachmentLink = (msg) => {
+        const fid = msg.attachment_id || msg.file_id;
+        if (!fid) return null;
+        const fname = msg.filename || msg.file_name || msg.name || 'Attachment';
+        const url = `${API_URL}?action=download_file&token=${encodeURIComponent(token)}&file_id=${fid}`;
+        return (
+            <a href={url} target="_blank" className="text-xs font-semibold text-blue-600 underline flex items-center gap-2" rel="noreferrer">
+                <Icons.Paperclip size={14}/> {fname}
+            </a>
+        );
+    };
 
     return (
-        <>
+        <div className={`flex flex-col h-full ${isDragging ? 'ring-2 ring-blue-300 ring-offset-2' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+            <input type="file" ref={fileInputRef} className="hidden" onChange={(e)=>{ if(e.target.files[0]) uploadAttachment(e.target.files[0]); e.target.value=''; }} />
+
             <div className="p-4 border-b bg-slate-50 flex justify-between items-center">
                 <div>
                     <h3 className="font-bold text-lg text-[#2c3259]">{ticket.subject}</h3>
@@ -2366,16 +2154,24 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                 </div>
                 <div className="flex gap-2 items-center">
                     {isAdmin && <button onClick={handleConvertToProject} className="text-xs px-3 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700">Generate Project</button>}
+                    {isAdmin && ticket.status !== 'closed' && <button onClick={handleSnooze} className="text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-200 flex items-center gap-1"><Icons.Clock size={14}/> Snooze</button>}
                     {(isAdmin || role === 'client') && ticket.status !== 'closed' && <button onClick={handleClose} className="text-xs border border-slate-300 px-3 py-1 rounded hover:bg-slate-200">Close Ticket</button>}
+                    {ticket.status === 'closed' && isAdmin && <button onClick={handleReopen} className="text-xs border px-3 py-1 rounded text-blue-600 border-blue-200 hover:bg-blue-50">Re-open</button>}
                 </div>
             </div>
+
+            {ticket.sentiment_score > 30 && (
+                <div className="px-4 py-3 bg-red-50 border-b border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+                    <Icons.AlertTriangle size={14}/> Potentially frustrated client (score {ticket.sentiment_score}). Respond with care.
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4" ref={scrollRef}>
                 {messages.map(m => {
                     const isSystem = m.sender_id == 0;
                     const isInternalMsg = m.is_internal == 1;
                     let bubbleColor = 'bg-slate-100 text-slate-600';
-                    
+
                     const text = m.message || '';
                     let displayMessage = text;
                     let personaLabel = null;
@@ -2384,25 +2180,25 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
                         bubbleColor = 'bg-yellow-100 border-yellow-200 text-yellow-900';
                         personaLabel = 'Internal Note';
                     } else if (isSystem) {
-                        if (text.includes('[First Mate]')) {
+                        if (m.persona === 'first' || text.includes('[First Mate]')) {
                             bubbleColor = 'bg-indigo-100 border-indigo-200 text-indigo-900';
                             displayMessage = text.replace('[First Mate]', '').trim();
                             personaLabel = 'First Mate (Senior AI)';
-                        } else if (text.includes('[Second Mate]')) {
+                        } else if (m.persona === 'second' || text.includes('[Second Mate]')) {
                             bubbleColor = 'bg-teal-50 border-teal-200 text-teal-800';
                             displayMessage = text.replace('[Second Mate]', '').trim();
                             personaLabel = 'Second Mate';
                         } else if (text.includes('[System]')) {
                             bubbleColor = 'bg-slate-200 text-slate-600 text-xs font-bold text-center py-1';
                             displayMessage = text.replace('[System]', '').trim();
-                            personaLabel = null; 
+                            personaLabel = null;
                         }
                     } else {
                         bubbleColor = (m.role === 'admin' ? 'bg-[#2c3259] text-white' : 'bg-[#2493a2] text-white');
                     }
-                    
+
                     const align = isSystem ? 'justify-start' : (m.role === role ? 'justify-end' : 'justify-start');
-                    
+
                     if (isSystem && text.includes('[System]')) {
                         return (
                             <div key={m.id} className="flex justify-center my-2">
@@ -2413,51 +2209,63 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
 
                     return (
                         <div key={m.id} className={`flex ${align}`}>
-                            <div className={`max-w-[85%] p-3 rounded-xl text-sm shadow-sm relative ${bubbleColor}`}>
-                                {personaLabel && <div className="text-[9px] font-bold uppercase opacity-70 mb-1 tracking-wider">{personaLabel}</div>}
-                                <span className="whitespace-pre-wrap block leading-relaxed">{window.formatTextWithLinks(displayMessage)}</span>
-                                <div className="text-[9px] mt-2 opacity-50 text-right">{new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                            <div className={`max-w-xl p-4 rounded-xl border ${bubbleColor} shadow-sm space-y-2`}>
+                                <div className="text-xs text-slate-500 flex items-center gap-2">
+                                    {personaLabel ? <span className="font-bold uppercase text-[10px] text-indigo-700">{personaLabel}</span> : <span className="font-bold text-slate-600">{m.full_name || (isSystem ? 'System' : 'User')}</span>}
+                                    {isInternalMsg && <span className="text-[10px] bg-yellow-200 text-yellow-900 px-2 py-0.5 rounded-full">Internal</span>}
+                                </div>
+                                <div className="whitespace-pre-wrap text-sm leading-relaxed">{displayMessage}</div>
+                                {attachmentLink(m)}
                             </div>
                         </div>
                     );
                 })}
+
                 {isThinking && (
-                     <div className="flex justify-start animate-pulse">
-                        <div className="bg-teal-50/50 border border-teal-100 text-teal-600 p-2 rounded-lg flex items-center">
-                            <window.Icons.Sparkles size={18} className="animate-spin"/> 
+                    <div className="flex justify-start">
+                        <div className="bg-slate-100 text-slate-500 px-4 py-3 rounded-xl border text-sm flex items-center gap-2">
+                            <Icons.Loader className="animate-spin" size={16}/> Thinking...
                         </div>
                     </div>
                 )}
             </div>
 
-            {ticket.status === 'closed' ? (
-                <div className="p-4 border-t bg-slate-50 text-center text-slate-500 text-sm font-bold flex items-center justify-center gap-2">
-                    <window.Icons.Lock size={16}/> This ticket is closed.
-                    {(isAdmin || role === 'client') && (
-                        <button onClick={() => handleReopen()} className="text-blue-600 hover:underline ml-2">Re-open</button>
-                    )}
+            {quickReplies.length > 0 && (
+                <div className="border-t bg-slate-50 px-4 py-3 flex flex-wrap gap-2">
+                    {quickReplies.map((q, idx) => (
+                        <button key={idx} type="button" onClick={()=>setReply(q.text || '')} className="text-xs border rounded-full px-3 py-1 bg-white hover:bg-slate-100">{q.title || 'Quick Reply'}</button>
+                    ))}
                 </div>
-            ) : (
-                <form onSubmit={handleSend} className="p-4 border-t bg-white">
-                    {isAdmin && (
-                        <div className="flex items-center gap-2 mb-2">
-                            <input type="checkbox" checked={isInternal} onChange={e=>setIsInternal(e.target.checked)} id="internal_note" className="w-4 h-4 text-[#2c3259]"/>
-                            <label htmlFor="internal_note" className="text-xs font-bold text-slate-500 cursor-pointer select-none">Internal Note (Client won't see this)</label>
-                        </div>
-                    )}
-                    <div className="flex gap-2">
-                        <input 
-                            value={reply} 
-                            onChange={e=>setReply(e.target.value)} 
-                            disabled={ticket.status === 'closed'}
-                            className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed ${isInternal ? 'focus:ring-yellow-400 bg-yellow-50' : 'focus:ring-[#2493a2]'}`} 
-                            placeholder={isInternal ? "Add an internal note..." : "Type your reply..."}
-                        />
-                        <button disabled={ticket.status === 'closed'} className="bg-[#2c3259] text-white p-3 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed hover:bg-[#1a1a3a] disabled:hover:bg-slate-300"><Icons.Send size={18}/></button>
-                    </div>
-                </form>
             )}
-        </>
+
+            <form onSubmit={handleSend} className={`border-t p-4 space-y-3 ${isInternal ? 'bg-yellow-50' : 'bg-white'}`}>
+                <div className="flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                        <input type="checkbox" checked={isInternal} onChange={e=>setIsInternal(e.target.checked)} /> Internal Note
+                    </label>
+                    {attachedFile && (
+                        <span className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1 rounded-full flex items-center gap-2">
+                            <Icons.Paperclip size={14}/> {attachedFile.name}
+                            <button type="button" className="text-blue-500" onClick={()=>setAttachedFile(null)}><Icons.Close size={12}/></button>
+                        </span>
+                    )}
+                    {uploading && <span className="text-xs text-slate-500 flex items-center gap-1"><Icons.Loader className="animate-spin" size={14}/> Uploading...</span>}
+                    {ticket.status === 'closed' && <span className="text-xs text-red-500">Ticket is closed. Re-open to reply.</span>}
+                </div>
+                <div className="flex gap-3">
+                    <textarea value={reply} onChange={e=>setReply(e.target.value)} className={`flex-1 p-3 border rounded-lg focus:ring-2 outline-none ${isInternal ? 'bg-yellow-100 border-yellow-200 focus:ring-yellow-400' : 'focus:ring-[#2493a2]'}`} placeholder="Type your reply..." rows={3} disabled={ticket.status==='closed'}></textarea>
+                    <div className="flex flex-col gap-2 w-40">
+                        <button type="button" onClick={()=>fileInputRef.current && fileInputRef.current.click()} className="px-4 py-2 rounded-lg border flex items-center justify-center gap-2 text-sm hover:bg-slate-50" disabled={uploading || ticket.status==='closed'}>
+                            <Icons.Paperclip size={14}/> Attach
+                        </button>
+                        <button type="submit" disabled={ticket.status==='closed' || isThinking || uploading} className={`px-4 py-2 rounded-lg text-white font-bold ${isThinking || uploading ? 'bg-slate-400' : 'bg-[#2493a2] hover:bg-[#1f7f8e]'}`}>
+                            {isThinking ? 'Sending...' : 'Send'}
+                        </button>
+                        {isAdmin && <button type="button" onClick={handleConvertToProject} className="px-4 py-2 rounded-lg border text-xs">Convert to Project</button>}
+                    </div>
+                </div>
+            </form>
+        </div>
     );
 };
 
@@ -2509,10 +2317,14 @@ const CreateTicketModal = ({ token, onClose, role }) => {
         if (isAdmin && !selectedClient) return alert("Please select a client.");
         
         const f = new FormData(e.target);
+        const ua = navigator.userAgent || 'unknown';
+        const reso = (window.screen && window.screen.width && window.screen.height) ? `${window.screen.width}x${window.screen.height}` : 'unknown';
         const payload = { 
             action: 'create_ticket', token, 
             subject: f.get('subject'), 
-            message: f.get('message'), 
+            message: `${f.get('message')}
+
+[Context] UA: ${ua} | Resolution: ${reso}`, 
             priority: f.get('priority') 
         };
         if (isAdmin && selectedClient) payload.target_client_id = selectedClient.id;

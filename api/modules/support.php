@@ -33,9 +33,14 @@ function ensureSupportSchema($pdo) {
     // 2. SELF-REPAIR (Fixes missing columns on existing tables)
     try { $pdo->exec("ALTER TABLE tickets ADD COLUMN project_id INT DEFAULT NULL"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE tickets ADD COLUMN is_billable TINYINT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE tickets ADD COLUMN sentiment_score INT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE tickets ADD COLUMN snooze_until DATETIME DEFAULT NULL"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE ticket_messages ADD COLUMN sender_id INT DEFAULT 0"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE ticket_messages ADD COLUMN is_internal TINYINT DEFAULT 0"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE ticket_messages ADD COLUMN attachment_path VARCHAR(255) DEFAULT NULL"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE ticket_messages ADD COLUMN file_id INT DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id)"); } catch (Exception $e) {}
+    try { $pdo->exec("CREATE INDEX IF NOT EXISTS idx_messages_ticket ON ticket_messages(ticket_id)"); } catch (Exception $e) {}
 }
 
 function triggerSupportAI($pdo, $secrets, $ticketId) {
@@ -189,6 +194,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
 
 function handleGetTickets($pdo, $i) { 
     $u = verifyAuth($i); ensureSupportSchema($pdo);
+    autoCloseStaleTickets($pdo);
 
     // Ordering: 1) status priority (open, waiting_client, closed),
     //           2) ticket urgency (urgent, high, normal, low),
@@ -198,16 +204,16 @@ function handleGetTickets($pdo, $i) {
     $baseSelect = "SELECT t.*, u.full_name as client_name, p.title as project_title, (SELECT message FROM ticket_messages WHERE ticket_id = t.id ORDER BY id DESC LIMIT 1) as last_message FROM tickets t LEFT JOIN users u ON t.user_id = u.id LEFT JOIN projects p ON t.project_id = p.id";
 
     if ($u['role'] === 'admin') { 
-        $sql = "$baseSelect $orderClause";
+        $sql = "$baseSelect WHERE (t.snooze_until IS NULL OR t.snooze_until <= NOW()) $orderClause";
         $stmt = $pdo->prepare($sql);
         $stmt->execute();
     } elseif ($u['role'] === 'partner') {
         ensurePartnerSchema($pdo);
-        $sql = "$baseSelect WHERE t.user_id = ? OR t.user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id = ?) $orderClause";
+        $sql = "$baseSelect WHERE (t.user_id = ? OR t.user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id = ?)) AND (t.snooze_until IS NULL OR t.snooze_until <= NOW()) $orderClause";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$u['uid'], $u['uid']]);
     } else {
-        $sql = "$baseSelect WHERE t.user_id = ? $orderClause";
+        $sql = "$baseSelect WHERE t.user_id = ? AND (t.snooze_until IS NULL OR t.snooze_until <= NOW()) $orderClause";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$u['uid']]);
     }
@@ -215,62 +221,70 @@ function handleGetTickets($pdo, $i) {
     sendJson('success', 'Tickets Loaded', ['tickets' => $stmt->fetchAll()]); 
 }
 
-function handleGetTicketThread($pdo, $i) { 
+function handleReplyTicket($pdo, $i, $s) { 
     $u = verifyAuth($i); 
     $tid = (int)$i['ticket_id']; 
-    
-    if ($u['role'] !== 'admin') { 
-        // Partner check or Owner check
-        if ($u['role'] === 'partner') {
-            ensurePartnerSchema($pdo);
-            $check = $pdo->prepare("SELECT id FROM tickets WHERE id=? AND (user_id=? OR user_id IN (SELECT client_id FROM partner_assignments WHERE partner_id=?))");
-            $check->execute([$tid, $u['uid'], $u['uid']]);
-        } else {
-            $check = $pdo->prepare("SELECT id FROM tickets WHERE id=? AND user_id=?");
-            $check->execute([$tid, $u['uid']]);
-        }
-        if (!$check->fetch()) sendJson('error', 'Access Denied'); 
-    } 
-    
-    $sql = "SELECT tm.*, u.full_name, u.role FROM ticket_messages tm LEFT JOIN users u ON tm.sender_id = u.id WHERE tm.ticket_id = ? ORDER BY tm.created_at ASC"; 
-    $stmt = $pdo->prepare($sql); 
-    $stmt->execute([$tid]); 
-    $msgs = $stmt->fetchAll(); 
-    if ($u['role'] !== 'admin') { 
-        $msgs = array_filter($msgs, function($m) { return $m['is_internal'] == 0; }); 
-    } 
-    // Tag personas via prefixes for frontend styling
-    foreach ($msgs as &$m) {
-        if (isset($m['sender_id']) && $m['sender_id'] == 0) {
-            $text = $m['message'] ?? '';
-            if (stripos($text, '[Second Mate]') === 0 || stripos($text, 'Ahoy!') === 0) $m['persona'] = 'second';
-            elseif (stripos($text, '[First Mate]') === 0 || stripos($text, 'First Mate') === 0) $m['persona'] = 'first';
-            else $m['persona'] = 'system';
-        }
+
+    $rawMsg = $i['message'] ?? '';
+    $cleanMsg = redactSensitiveData(strip_tags($rawMsg)); // #23 Sanitization + Redaction
+    if (empty(trim($cleanMsg))) sendJson('error', 'Message cannot be empty');
+
+    $statusCheck = $pdo->prepare("SELECT status FROM tickets WHERE id = ?");
+    $statusCheck->execute([$tid]);
+    $currentStatus = $statusCheck->fetchColumn();
+
+    if ($currentStatus === 'closed') { sendJson('error', 'Ticket is closed.'); return; }
+
+    $isInternal = ($u['role'] === 'admin' && !empty($i['is_internal'])) ? 1 : 0; 
+    $fileId = !empty($i['file_id']) ? (int)$i['file_id'] : 0; 
+
+    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message, is_internal, file_id) VALUES (?, ?, ?, ?, ?)"); 
+    $stmt->execute([$tid, $u['uid'], $cleanMsg, $isInternal, $fileId]); 
+
+    $newStatus = ($u['role'] === 'admin') ? 'waiting_client' : 'open'; 
+    if ($isInternal || $currentStatus === 'escalated') $newStatus = $currentStatus;
+
+    $pdo->prepare("UPDATE tickets SET updated_at = NOW(), status = ? WHERE id = ?")->execute([$newStatus, $tid]); 
+
+    if ($u['role'] === 'client') {
+        $score = analyzeSentiment($cleanMsg);
+        $pdo->prepare("UPDATE tickets SET sentiment_score = LEAST(100, sentiment_score + ?) WHERE id = ?")->execute([$score, $tid]);
+        if ($newStatus !== 'escalated') triggerSupportAI($pdo, $s, $tid);
+        notifyPartnerIfAssigned($pdo, $u['uid'], "{$u['name']} replied to Ticket #$tid");
     }
-    sendJson('success', 'Thread Loaded', ['messages' => array_values($msgs)]); 
+
+    sendJson('success', 'Reply Sent', ['new_status' => $newStatus]); 
 }
 
-function handleCreateTicket($pdo, $i, $s) { 
-    $u = verifyAuth($i); ensureSupportSchema($pdo); 
-    
+function handleCreateTicket($pdo, $i, $s) {
+    $u = verifyAuth($i);
+    ensureSupportSchema($pdo);
+    checkTicketRateLimit($pdo, $u['uid']);
+
     // Determine the actual owner of the ticket
     $ticketOwnerId = $u['uid'];
     if (($u['role'] === 'admin' || $u['role'] === 'partner') && !empty($i['target_client_id'])) {
         $ticketOwnerId = (int)$i['target_client_id'];
     }
 
-    $stmt = $pdo->prepare("INSERT INTO tickets (user_id, project_id, subject, priority, status) VALUES (?, ?, ?, ?, 'open')"); 
-    $pid = !empty($i['project_id']) ? (int)$i['project_id'] : NULL; 
-    $stmt->execute([$ticketOwnerId, $pid, strip_tags($i['subject']), $i['priority']]); 
-    $ticketId = $pdo->lastInsertId(); 
-    
+    $priority = !empty($i['priority']) ? $i['priority'] : 'normal';
+    $pid = !empty($i['project_id']) ? (int)$i['project_id'] : null;
+
+    $subject = redactSensitiveData(strip_tags($i['subject']));
+    $message = redactSensitiveData(strip_tags($i['message']));
+
+    $stmt = $pdo->prepare("INSERT INTO tickets (user_id, project_id, subject, priority, status) VALUES (?, ?, ?, ?, 'open')");
+    $stmt->execute([$ticketOwnerId, $pid, $subject, $priority]);
+    $ticketId = $pdo->lastInsertId();
+
     // The sender is still the actual logged-in user (Admin/Partner), so the message history is accurate
-    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, ?, ?)"); 
-    $stmt->execute([$ticketId, $u['uid'], strip_tags($i['message'])]); 
-    
+    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, ?, ?)");
+    $stmt->execute([$ticketId, $u['uid'], $message]);
+
     // If created by Client, trigger AI and notify partner
-    if ($u['role'] === 'client') { 
+    if ($u['role'] === 'client') {
+        $score = analyzeSentiment($subject . ' ' . $message);
+        $pdo->prepare("UPDATE tickets SET sentiment_score = ? WHERE id = ?")->execute([$score, $ticketId]);
         triggerSupportAI($pdo, $s, $ticketId);
         notifyPartnerIfAssigned($pdo, $u['uid'], "Client {$u['name']} created Ticket #$ticketId");
     } elseif ($ticketOwnerId !== $u['uid']) {
@@ -278,68 +292,7 @@ function handleCreateTicket($pdo, $i, $s) {
         createNotification($pdo, $ticketOwnerId, "New Support Ticket #$ticketId opened for you by {$u['name']}", 'ticket', $ticketId);
     }
 
-    sendJson('success', 'Ticket Created', ['ticket_id' => $ticketId]); 
-}
-
-function handleReplyTicket($pdo, $i, $s) { 
-    $u = verifyAuth($i); 
-    $tid = (int)$i['ticket_id']; 
-
-    // 1. Fetch Current Status to prevent "Zombie AI"
-    $statusCheck = $pdo->prepare("SELECT status FROM tickets WHERE id = ?");
-    $statusCheck->execute([$tid]);
-    $currentStatus = $statusCheck->fetchColumn();
-
-    if ($currentStatus === 'closed') {
-        sendJson('error', 'This ticket is closed. Replies are disabled.');
-        return;
-    }
-
-    $isInternal = ($u['role'] === 'admin' && !empty($i['is_internal'])) ? 1 : 0; 
-    
-    // 2. Insert Message
-    $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message, is_internal) VALUES (?, ?, ?, ?)"); 
-    $stmt->execute([$tid, $u['uid'], strip_tags($i['message']), $isInternal]); 
-    
-    // 3. Determine New Status (The Fix)
-    if ($u['role'] === 'admin') {
-        $newStatus = 'waiting_client';
-    } else {
-        // If client replies to an ESCALATED ticket, keep it escalated (don't wake the AI).
-        // Otherwise, set to open to trigger AI triage.
-        $newStatus = ($currentStatus === 'escalated') ? 'escalated' : 'open';
-    }
-    
-    if ($isInternal) $newStatus = $currentStatus; // Internal notes never change status
-    
-    $pdo->prepare("UPDATE tickets SET updated_at = NOW(), status = ? WHERE id = ?")->execute([$newStatus, $tid]); 
-    
-    // 4. Trigger AI / Notifications
-    // ONLY trigger AI if the ticket is NOT escalated
-    if ($u['role'] === 'client' && $newStatus !== 'escalated') {
-        triggerSupportAI($pdo, $s, $tid);
-    }
-    
-    // Always notify partner/admin on client reply
-    if ($u['role'] === 'client') {
-        notifyPartnerIfAssigned($pdo, $u['uid'], "{$u['name']} replied to Ticket #$tid");
-    }
-    
-    if ($u['role'] === 'admin' || $u['role'] === 'partner') {
-        $stmt = $pdo->prepare("SELECT user_id FROM tickets WHERE id = ?");
-        $stmt->execute([$tid]);
-        $ticket = $stmt->fetch();
-        if ($ticket) {
-            createNotification($pdo, $ticket['user_id'], "{$u['name']} replied to Ticket #$tid", 'ticket', $tid);
-        }
-    }
-    
-    // 5. Fetch Final Status (In case AI auto-closed or escalated it immediately)
-    $finalStatusStmt = $pdo->prepare("SELECT status FROM tickets WHERE id = ?");
-    $finalStatusStmt->execute([$tid]);
-    $finalStatus = $finalStatusStmt->fetchColumn();
-    
-    sendJson('success', 'Reply Sent', ['new_status' => $finalStatus]); 
+    sendJson('success', 'Ticket Created', ['ticket_id' => $ticketId]);
 }
 
 function handleUpdateTicketStatus($pdo, $i) {
@@ -434,6 +387,47 @@ function handleCreateTicketFromInsight($pdo, $i) {
     ];
 
     sendJson('success', 'Thread Started', ['ticket_id' => $tid, 'initial_messages' => $initialMessages]);
+}
+
+function handleSaveQuickReply($pdo, $i) {
+    $u = verifyAuth($i);
+    if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'support_canned_responses'");
+    $stmt->execute();
+    $current = json_decode($stmt->fetchColumn() ?: '[]', true);
+    $current[] = ['title' => strip_tags($i['title']), 'text' => strip_tags($i['text'])];
+    $pdo->prepare("REPLACE INTO settings (setting_key, setting_value) VALUES ('support_canned_responses', ?)")->execute([json_encode($current)]);
+    sendJson('success', 'Saved');
+}
+
+function analyzeSentiment($text) {
+    $triggers = ['urgent'=>20,'emergency'=>30,'broken'=>20,'down'=>30,'error'=>10,'fail'=>10,'refund'=>50,'cancel'=>50,'frustrated'=>40,'asap'=>10];
+    $score = 0; $lower = strtolower($text);
+    foreach ($triggers as $word => $points) { if (strpos($lower, $word) !== false) $score += $points; }
+    return min(100, $score);
+}
+
+function checkTicketRateLimit($pdo, $userId) {
+    $stmt = $pdo->prepare("SELECT created_at FROM tickets WHERE user_id = ? ORDER BY id DESC LIMIT 1");
+    $stmt->execute([$userId]);
+    $last = $stmt->fetchColumn();
+    if ($last && (time() - strtotime($last) < 60)) sendJson('error', 'Please wait 60 seconds.');
+}
+
+function redactSensitiveData($text) {
+    $text = preg_replace('/\b(?:\d[ -]*?){13,16}\b/', '[REDACTED_CARD]', $text);
+    return preg_replace('/\b\d{3}-\d{2}-\d{4}\b/', '[REDACTED_SSN]', $text);
+}
+
+function autoCloseStaleTickets($pdo) {
+    $pdo->prepare("UPDATE tickets SET status = 'closed' WHERE status = 'waiting_client' AND updated_at < DATE_SUB(NOW(), INTERVAL 7 DAY)")->execute();
+}
+
+function handleSnoozeTicket($pdo, $i) {
+    $u = verifyAuth($i); if ($u['role'] !== 'admin') sendJson('error', 'Unauthorized');
+    $date = date('Y-m-d H:i:s', strtotime("+".(int)$i['hours']." hours"));
+    $pdo->prepare("UPDATE tickets SET snooze_until = ? WHERE id = ?")->execute([$date, (int)$i['ticket_id']]);
+    sendJson('success', "Snoozed until $date");
 }
 
 
