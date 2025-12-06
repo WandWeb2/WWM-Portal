@@ -1,6 +1,6 @@
 <?php
 // /api/modules/utils.php
-// Version: 32.0 - SQLite Compatibility Fix
+// Version: 35.0 - Dynamic AI Model Discovery
 
 function getDBConnection($secrets) {
     if (!empty($secrets['DB_DSN'])) {
@@ -234,18 +234,84 @@ function getGoogleAccessToken($secrets) {
     return $res['access_token'] ?? null;
 }
 
+// [NEW] Dynamically finds the best available model from Google
+function getBestGeminiModel($secrets) {
+    // 1. Check Cache (avoid slowing down every request)
+    // Note: In a full production env, we'd use the database 'settings' table. 
+    // For this standalone version, we will default to a safe fallback if the API check fails.
+    
+    $url = "https://generativelanguage.googleapis.com/v1beta/models?key=" . $secrets['GEMINI_API_KEY'];
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $result = curl_exec($ch);
+    curl_close($ch);
+    
+    $data = json_decode($result, true);
+    
+    if (empty($data['models'])) return "gemini-pro"; // Safe Fallback
+
+    // 2. Define Preference Hierarchy
+    // We prefer 1.5 Flash (fastest), then 1.5 Pro (best), then standard Pro.
+    $preferred = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
+    
+    // 3. Map Available Models
+    $available = [];
+    foreach ($data['models'] as $m) {
+        $id = str_replace('models/', '', $m['name']);
+        if (in_array('generateContent', $m['supportedGenerationMethods'] ?? [])) {
+            $available[] = $id;
+        }
+    }
+
+    // 4. Match Preference
+    foreach ($preferred as $p) {
+        if (in_array($p, $available)) return $p;
+    }
+
+    // 5. If no preferences match, return the first available model
+    return $available[0] ?? "gemini-pro";
+}
+
 function callGeminiAI($pdo, $secrets, $systemPrompt, $userPrompt = "") {
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" . $secrets['GEMINI_API_KEY'];
-    $payload = ["contents" => [["role" => "user", "parts" => [["text" => $systemPrompt . "\n\n" . $userPrompt]]]]];
+    // AUTO-DISCOVERY: Get the best model available to this API Key
+    $model = getBestGeminiModel($secrets);
+    
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=" . $secrets['GEMINI_API_KEY'];
+    
+    $payload = [
+        "contents" => [
+            [
+                "role" => "user",
+                "parts" => [
+                    ["text" => $systemPrompt . "\n\n" . $userPrompt]
+                ]
+            ]
+        ]
+    ];
     
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    $res = json_decode(curl_exec($ch), true);
+    
+    $result = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    return $res;
+    
+    $response = json_decode($result, true);
+    
+    // Inject Model Info into response for debugging
+    if (is_array($response)) {
+        $response['_meta_model_used'] = $model;
+    }
+
+    if ($httpCode >= 400) {
+        if (isset($response['error'])) return $response;
+        return ['error' => ['code' => $httpCode, 'message' => 'HTTP Error']];
+    }
+
+    return $response;
 }
 
 function fetchWandWebContext() {
