@@ -315,7 +315,34 @@ function callGeminiAI($pdo, $secrets, $systemPrompt, $userPrompt = "") {
 }
 
 function fetchWandWebContext() {
-    return "WandWeb Services.";
+    return "
+    OFFICIAL SERVICE CATALOG (WANDWEB):
+    
+    1. MONTHLY PLANS (Top Priority to Sell)
+       - Link: https://wandweb.co/monthly-plans/
+       - Focus: The ultimate peace of mind. Includes updates, security, and support.
+       - Key Selling Points: Proactive maintenance, priority support, discounted hourly rates for extra work.
+    
+    2. WEBSITE MAINTENANCE & SUPPORT
+       - Link: https://wandweb.co/website-maintenance-support/
+       - Features: Core WordPress updates, plugin management, uptime monitoring, off-site backups.
+       - Value: 'We break it, we fix it.' Prevention is cheaper than repair.
+    
+    3. MANAGED HOSTING
+       - Link: https://wandweb.co/hosting/
+       - Specs: High-performance cloud hosting optimized for WordPress.
+       - Benefits: SSL included, CDN integration, daily backups, malware scanning.
+    
+    4. SEO & LOCAL LISTINGS
+       - Link: https://wandweb.co/seo-local-listings/
+       - Goal: Get found on Google Maps and Local Search.
+       - Deliverables: Google Business Profile optimization, citation building, on-page SEO keywording.
+    
+    5. SOCIAL MEDIA MANAGEMENT
+       - Link: https://wandweb.co/social-media-management/
+       - Scope: Content creation, scheduling, and community engagement.
+       - Platforms: Facebook, Instagram, LinkedIn, Google Business.
+    ";
 }
 
 function notifyAllAdmins($pdo, $msg) {

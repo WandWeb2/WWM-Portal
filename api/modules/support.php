@@ -87,7 +87,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
 
     // Define Service Context (Hardcoded for reliability until dynamic sync is built)
-    $serviceList = "Web Design, WordPress Maintenance, SEO Optimization, Content Writing, Graphic Design, Hosting Management";
+    $serviceList = "Monthly Plans (Care Plans), Managed Hosting, SEO & Local Listings, Social Media Management, Website Maintenance";
 
     // 3. THE "AGENCY ACCOUNT MANAGER" PROMPT
     $systemPrompt = "
