@@ -270,6 +270,225 @@ const TaskManager = ({ project, token, role, onClose }) => {
     );
 };
 
+window.ClientsView = ({ token, role }) => {
+    const Icons = window.Icons;
+    const [clients, setClients] = React.useState([]);
+    const [partners, setPartners] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    const [searchTerm, setSearchTerm] = React.useState('');
+    const [showModal, setShowModal] = React.useState(false);
+    const [editingClient, setEditingClient] = React.useState(null);
+    const isAdmin = role === 'admin';
+
+    React.useEffect(() => {
+        loadData();
+    }, [token]);
+
+    const loadData = () => {
+        setLoading(true);
+        Promise.all([
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_clients', token }) }),
+            window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_partners', token }) })
+        ]).then(([clientRes, partnerRes]) => {
+            if (clientRes && clientRes.status === 'success') setClients(clientRes.clients || []);
+            if (partnerRes && partnerRes.status === 'success') setPartners(partnerRes.partners || []);
+        }).finally(() => setLoading(false));
+    };
+
+    const handleCreateClient = async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const data = {
+            action: 'create_client',
+            token,
+            email: f.get('email'),
+            full_name: f.get('full_name'),
+            business_name: f.get('business_name'),
+            password: f.get('password')
+        };
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(data) });
+        if (res.status === 'success') {
+            setShowModal(false);
+            loadData();
+        } else {
+            alert(res.message);
+        }
+    };
+
+    const handleUpdateClient = async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const data = {
+            action: 'update_client',
+            token,
+            client_id: editingClient.id,
+            full_name: f.get('full_name'),
+            business_name: f.get('business_name'),
+            email: f.get('email')
+        };
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify(data) });
+        if (res.status === 'success') {
+            setShowModal(false);
+            setEditingClient(null);
+            loadData();
+        } else {
+            alert(res.message);
+        }
+    };
+
+    const handleDeleteClient = async (id) => {
+        if (!confirm('Delete this client? This will also remove all their projects and data.')) return;
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_client', token, client_id: id }) });
+        if (res.status === 'success') {
+            loadData();
+        } else {
+            alert(res.message);
+        }
+    };
+
+    const handleAssignPartner = async (clientId, partnerId) => {
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'assign_partner', token, client_id: clientId, partner_id: partnerId }) });
+        if (res.status === 'success') {
+            loadData();
+        } else {
+            alert(res.message);
+        }
+    };
+
+    const filteredClients = clients.filter(c => 
+        (c.full_name && c.full_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (c.business_name && c.business_name.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    if (!isAdmin) {
+        return (
+            <div className="p-8 text-center">
+                <div className="text-slate-400 mb-4"><Icons.Lock size={48} className="mx-auto" /></div>
+                <h3 className="font-bold text-xl text-slate-700">Access Restricted</h3>
+                <p className="text-slate-500 mt-2">Only administrators can view client management.</p>
+            </div>
+        );
+    }
+
+    if (loading) return <div className="p-8 text-center"><Icons.Loader /></div>;
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h2 className="text-2xl font-bold text-[#2c3259]">Client Management</h2>
+                    <p className="text-sm text-slate-500 mt-1">{clients.length} total clients</p>
+                </div>
+                <button onClick={() => { setEditingClient(null); setShowModal(true); }} className="bg-[#2c3259] text-white px-4 py-2 rounded flex items-center gap-2">
+                    <Icons.Plus size={16} /> New Client
+                </button>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border">
+                <input 
+                    type="text" 
+                    placeholder="Search clients..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full p-3 border rounded-lg"
+                />
+            </div>
+
+            <div className="bg-white rounded-xl border overflow-hidden shadow-sm">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 border-b">
+                        <tr>
+                            <th className="p-4">Name</th>
+                            <th className="p-4">Email</th>
+                            <th className="p-4">Business</th>
+                            <th className="p-4">Stripe ID</th>
+                            <th className="p-4">Partner</th>
+                            <th className="p-4">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredClients.length === 0 ? (
+                            <tr><td colSpan="6" className="p-8 text-center text-slate-400">No clients found</td></tr>
+                        ) : (
+                            filteredClients.map(client => (
+                                <tr key={client.id} className="border-b hover:bg-slate-50">
+                                    <td className="p-4 font-medium text-[#2c3259]">{client.full_name || 'N/A'}</td>
+                                    <td className="p-4 text-slate-600">{client.email}</td>
+                                    <td className="p-4 text-slate-600">{client.business_name || '-'}</td>
+                                    <td className="p-4 font-mono text-xs text-slate-400">{client.stripe_id ? client.stripe_id.substring(0, 12) + '...' : 'None'}</td>
+                                    <td className="p-4">
+                                        <select 
+                                            value={client.partner_id || ''} 
+                                            onChange={(e) => handleAssignPartner(client.id, e.target.value)}
+                                            className="text-xs p-1 border rounded"
+                                        >
+                                            <option value="">No Partner</option>
+                                            {partners.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                                        </select>
+                                    </td>
+                                    <td className="p-4">
+                                        <div className="flex gap-2">
+                                            <button onClick={() => { setEditingClient(client); setShowModal(true); }} className="text-blue-600 hover:underline text-xs">Edit</button>
+                                            <button onClick={() => handleDeleteClient(client.id)} className="text-red-500 hover:underline text-xs">Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {showModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white p-8 rounded-xl w-full max-w-md relative">
+                        <button onClick={() => { setShowModal(false); setEditingClient(null); }} className="absolute top-4 right-4">
+                            <Icons.Close />
+                        </button>
+                        <h3 className="font-bold text-xl mb-4">{editingClient ? 'Edit Client' : 'New Client'}</h3>
+                        <form onSubmit={editingClient ? handleUpdateClient : handleCreateClient} className="space-y-4">
+                            <input 
+                                name="full_name" 
+                                placeholder="Full Name" 
+                                defaultValue={editingClient?.full_name || ''}
+                                className="w-full p-2 border rounded" 
+                                required 
+                            />
+                            <input 
+                                name="email" 
+                                type="email" 
+                                placeholder="Email" 
+                                defaultValue={editingClient?.email || ''}
+                                className="w-full p-2 border rounded" 
+                                required 
+                            />
+                            <input 
+                                name="business_name" 
+                                placeholder="Business Name (Optional)" 
+                                defaultValue={editingClient?.business_name || ''}
+                                className="w-full p-2 border rounded" 
+                            />
+                            {!editingClient && (
+                                <input 
+                                    name="password" 
+                                    type="password" 
+                                    placeholder="Password" 
+                                    className="w-full p-2 border rounded" 
+                                    required 
+                                />
+                            )}
+                            <button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">
+                                {editingClient ? 'Update Client' : 'Create Client'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 window.SettingsView = ({ token, role }) => {
     const Icons = window.Icons;
     const isAdmin = role === 'admin';
@@ -718,6 +937,67 @@ const ServiceCard = ({ product, isAdmin, onBuy, onEdit, onDelete, onToggleVisibi
             <h3 className="font-bold text-lg text-[#2c3259]">{product.name}</h3><p className="text-sm text-slate-500 mb-4 line-clamp-2">{product.description}</p>
             {product.prices.length > 1 && (<div className="flex gap-2 mb-4 overflow-x-auto pb-2">{product.prices.map((p, idx) => (<button key={p.id} onClick={() => setSelectedPriceIdx(idx)} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${selectedPriceIdx === idx ? 'bg-[#2c3259] text-white border-[#2c3259]' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{p.interval === 'one-time' ? 'Once' : p.interval}</button>))}</div>)}
             <div className="flex justify-between items-center mt-auto pt-4 border-t border-slate-100"><div><span className="font-bold text-xl">${price.amount}</span><span className="text-xs text-slate-400 font-normal ml-1">{price.currency} {price.interval!=='one-time'?'/'+price.interval:''}</span></div>{!isAdmin && <button onClick={() => onBuy(price.id, price.interval)} className="bg-[#dba000] hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm">{actionLabel}</button>}</div>
+        </div>
+    );
+};
+
+const ServiceSortModal = ({ services, onClose, onSave }) => {
+    const Icons = window.Icons;
+    const [items, setItems] = React.useState([]);
+    
+    React.useEffect(() => {
+        const flatList = [];
+        Object.keys(services).forEach(cat => {
+            services[cat].forEach(srv => flatList.push({ key: srv.id, name: srv.name, category: cat }));
+        });
+        setItems(flatList);
+    }, [services]);
+    
+    const moveUp = (idx) => {
+        if (idx === 0) return;
+        const copy = [...items];
+        [copy[idx - 1], copy[idx]] = [copy[idx], copy[idx - 1]];
+        setItems(copy);
+    };
+    
+    const moveDown = (idx) => {
+        if (idx === items.length - 1) return;
+        const copy = [...items];
+        [copy[idx], copy[idx + 1]] = [copy[idx + 1], copy[idx]];
+        setItems(copy);
+    };
+    
+    const handleSave = () => {
+        const ordered = items.map((item, index) => ({ key: item.key, index }));
+        onSave(ordered);
+    };
+    
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white p-8 rounded-xl w-full max-w-2xl relative max-h-[80vh] overflow-y-auto">
+                <button onClick={onClose} className="absolute top-4 right-4"><Icons.Close/></button>
+                <h3 className="font-bold text-xl mb-4">Arrange Services</h3>
+                <p className="text-sm text-slate-500 mb-6">Drag items to reorder them in the catalog</p>
+                <div className="space-y-2">
+                    {items.map((item, idx) => (
+                        <div key={item.key} className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
+                            <span className="font-mono text-xs text-slate-400 w-8">{idx + 1}</span>
+                            <div className="flex-1">
+                                <div className="font-bold text-sm">{item.name}</div>
+                                <div className="text-xs text-slate-500">{item.category}</div>
+                            </div>
+                            <div className="flex gap-1">
+                                <button onClick={() => moveUp(idx)} disabled={idx === 0} className="p-1 hover:bg-slate-200 rounded disabled:opacity-30"><Icons.ChevronUp size={16}/></button>
+                                <button onClick={() => moveDown(idx)} disabled={idx === items.length - 1} className="p-1 hover:bg-slate-200 rounded disabled:opacity-30"><Icons.ChevronDown size={16}/></button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex gap-2 mt-6">
+                    <button onClick={handleSave} className="flex-1 bg-[#2c3259] text-white p-3 rounded-lg font-bold">Save Order</button>
+                    <button onClick={onClose} className="px-6 bg-slate-200 text-slate-700 p-3 rounded-lg font-bold">Cancel</button>
+                </div>
+            </div>
         </div>
     );
 };

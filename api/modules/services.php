@@ -30,7 +30,6 @@ function handleGetServices($pdo, $input, $secrets) {
     }
     
     // 2. Fetch Stripe Products & Prices
-    // We fetch active products and expand default_price if possible, but for robust lists we fetch prices separately
     $products = stripeRequest($secrets, 'GET', 'products?limit=100&active=true');
     $prices = stripeRequest($secrets, 'GET', 'prices?limit=100&active=true');
     
@@ -54,7 +53,6 @@ function handleGetServices($pdo, $input, $secrets) {
     $services = [];
     foreach ($products['data'] as $prod) {
         $pid = $prod['id'];
-        // Skip if locally hidden and user is not admin
         $isHidden = (bool)($meta[$pid]['is_hidden'] ?? false);
         if ($isHidden && $user['role'] !== 'admin') continue;
         
@@ -70,9 +68,7 @@ function handleGetServices($pdo, $input, $secrets) {
         ];
     }
     
-    // Simple sort by prod_sort
     usort($services, function($a, $b) { return $a['prod_sort'] - $b['prod_sort']; });
-    
     sendJson('success', 'Services Loaded', ['services' => $services]);
 }
 
@@ -80,31 +76,16 @@ function handleCreateProduct($pdo, $input, $secrets) {
     $user = verifyAuth($input);
     if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
     
-    // Create in Stripe
-    $stripeData = [
-        'name' => $input['name'],
-        'description' => $input['description'] ?? ''
-    ];
+    $stripeData = ['name' => $input['name'], 'description' => $input['description'] ?? ''];
     $prod = stripeRequest($secrets, 'POST', 'products', $stripeData);
-    
     if (empty($prod['id'])) sendJson('error', 'Stripe Create Failed');
     
-    // Create Price
-    $priceData = [
-        'product' => $prod['id'],
-        'unit_amount' => (int)($input['amount'] * 100),
-        'currency' => 'usd'
-    ];
-    if ($input['interval'] !== 'one-time') {
-        $priceData['recurring'] = ['interval' => $input['interval']];
-    }
+    $priceData = ['product' => $prod['id'], 'unit_amount' => (int)($input['amount'] * 100), 'currency' => 'usd'];
+    if ($input['interval'] !== 'one-time') $priceData['recurring'] = ['interval' => $input['interval']];
     stripeRequest($secrets, 'POST', 'prices', $priceData);
     
-    // Save Local Meta
     ensureServiceSchema($pdo);
-    $pdo->prepare("INSERT INTO product_metadata (stripe_product_id, category) VALUES (?, ?)")
-        ->execute([$prod['id'], $input['category'] ?? 'General']);
-        
+    $pdo->prepare("INSERT INTO product_metadata (stripe_product_id, category) VALUES (?, ?)")->execute([$prod['id'], $input['category'] ?? 'General']);
     sendJson('success', 'Product Created');
 }
 
@@ -112,39 +93,25 @@ function handleUpdateProduct($pdo, $input, $secrets) {
     $user = verifyAuth($input);
     if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
     
-    // Update Stripe
-    stripeRequest($secrets, 'POST', "products/{$input['product_id']}", [
-        'name' => $input['name'],
-        'description' => $input['description']
-    ]);
+    stripeRequest($secrets, 'POST', "products/{$input['product_id']}", ['name' => $input['name'], 'description' => $input['description']]);
     
-    // Update Local Meta
     ensureServiceSchema($pdo);
-    $stmt = $pdo->prepare("INSERT INTO product_metadata (stripe_product_id, category) VALUES (?, ?) ON DUPLICATE KEY UPDATE category = ?");
-    
-    // SQLite Fallback for ON DUPLICATE KEY
     if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
         $pdo->prepare("REPLACE INTO product_metadata (stripe_product_id, category, is_hidden, sort_order) VALUES (?, ?, (SELECT is_hidden FROM product_metadata WHERE stripe_product_id=?), (SELECT sort_order FROM product_metadata WHERE stripe_product_id=?))")
             ->execute([$input['product_id'], $input['category'], $input['product_id'], $input['product_id']]);
     } else {
-        // MySQL
-        $stmt->execute([$input['product_id'], $input['category'], $input['category']]);
+        $pdo->prepare("INSERT INTO product_metadata (stripe_product_id, category) VALUES (?, ?) ON DUPLICATE KEY UPDATE category = ?")
+            ->execute([$input['product_id'], $input['category'], $input['category']]);
     }
-    
     sendJson('success', 'Updated');
 }
 
 function handleDeleteProduct($pdo, $input, $secrets) {
     $user = verifyAuth($input);
     if ($user['role'] !== 'admin') sendJson('error', 'Unauthorized');
-    
-    // Archive in Stripe (Deleting is often restricted if it has transactions)
     stripeRequest($secrets, 'POST', "products/{$input['product_id']}", ['active' => 'false']);
-    
-    // Remove local meta
     ensureServiceSchema($pdo);
     $pdo->prepare("DELETE FROM product_metadata WHERE stripe_product_id = ?")->execute([$input['product_id']]);
-    
     sendJson('success', 'Product Archived');
 }
 
@@ -156,7 +123,6 @@ function handleToggleProductVisibility($pdo, $input) {
     $pid = $input['product_id'];
     $hidden = $input['hidden'] ? 1 : 0;
     
-    // Upsert visibility
     $exists = $pdo->prepare("SELECT stripe_product_id FROM product_metadata WHERE stripe_product_id = ?");
     $exists->execute([$pid]);
     if ($exists->fetch()) {
@@ -164,7 +130,6 @@ function handleToggleProductVisibility($pdo, $input) {
     } else {
         $pdo->prepare("INSERT INTO product_metadata (stripe_product_id, is_hidden) VALUES (?, ?)")->execute([$pid, $hidden]);
     }
-    
     sendJson('success', 'Visibility Updated');
 }
 
@@ -174,23 +139,13 @@ function handleSaveServiceOrder($pdo, $input) {
     ensureServiceSchema($pdo);
     
     $items = $input['items'] ?? [];
-    $stmt = $pdo->prepare("UPDATE product_metadata SET sort_order = ? WHERE stripe_product_id = ?");
-    
-    // If local record doesn't exist, we must create it. 
-    // For simplicity, we assume admins have viewed the list which likely syncs basics, 
-    // or we just INSERT OR IGNORE if possible. 
-    // Here we'll just try update, if user organizes raw stripe items they might miss metadata entries.
-    // Ideally we iterate and upsert.
-    
     foreach ($items as $item) {
-        // Simple UPSERT for sort order
         $pid = $item['key'];
         $sort = (int)$item['index'];
-        
         $check = $pdo->prepare("SELECT stripe_product_id FROM product_metadata WHERE stripe_product_id = ?");
         $check->execute([$pid]);
         if ($check->fetch()) {
-            $stmt->execute([$sort, $pid]);
+            $pdo->prepare("UPDATE product_metadata SET sort_order = ? WHERE stripe_product_id = ?")->execute([$sort, $pid]);
         } else {
             $pdo->prepare("INSERT INTO product_metadata (stripe_product_id, sort_order) VALUES (?, ?)")->execute([$pid, $sort]);
         }
@@ -200,42 +155,29 @@ function handleSaveServiceOrder($pdo, $input) {
 
 function handleCreateCheckout($pdo, $input, $secrets) {
     $user = verifyAuth($input);
-    
     $priceId = $input['price_id'];
     $mode = ($input['interval'] === 'one-time') ? 'payment' : 'subscription';
     
     $payload = [
         'payment_method_types' => ['card'],
-        'line_items' => [[
-            'price' => $priceId,
-            'quantity' => 1,
-        ]],
+        'line_items' => [['price' => $priceId, 'quantity' => 1]],
         'mode' => $mode,
         'success_url' => 'https://' . $_SERVER['HTTP_HOST'] . '/portal/?payment=success',
         'cancel_url' => 'https://' . $_SERVER['HTTP_HOST'] . '/portal/?payment=cancelled',
     ];
     
-    // Attach Customer if known
     if (!empty($user['uid'])) {
-        $stmt = $pdo->prepare("SELECT stripe_id FROM users WHERE id = ?");
+        $stmt = $pdo->prepare("SELECT stripe_id, email FROM users WHERE id = ?");
         $stmt->execute([$user['uid']]);
         $row = $stmt->fetch();
         if (!empty($row['stripe_id'])) {
             $payload['customer'] = $row['stripe_id'];
-        } else {
-            // Optional: Auto-create customer here if missing?
-            // For now, let Stripe handle guest checkout if no ID, or rely on email prefill
-            $payload['customer_email'] = getSetting($pdo, 'admin_email', ''); // Placeholder, should be user email
-            // Better: fetch user email
-            $uStmt = $pdo->prepare("SELECT email FROM users WHERE id = ?");
-            $uStmt->execute([$user['uid']]);
-            $uRow = $uStmt->fetch();
-            if($uRow) $payload['customer_email'] = $uRow['email'];
+        } else if ($row['email']) {
+            $payload['customer_email'] = $row['email'];
         }
     }
     
     $session = stripeRequest($secrets, 'POST', 'checkout/sessions', $payload);
-    
     if (isset($session['url'])) {
         sendJson('success', 'Checkout Created', ['url' => $session['url']]);
     } else {
