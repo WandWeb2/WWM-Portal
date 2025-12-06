@@ -1,7 +1,7 @@
 /* =============================================================================
    WandWeb Portal Views
    File: /portal/js/views.js
-   Version: 30.1 (Force Fix)
+   Version: 30.2 (Fix Service Parsing)
    ============================================================================= */
 console.log("Views.js v30.1 - Force Loaded"); // Debugging confirmation
 
@@ -929,8 +929,10 @@ window.ServicesView = ({ token, role }) => {
         setLoading(true); 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_services', token }) })
         .then(res => { 
-            if(res && res.status === 'success' && res.data && Array.isArray(res.data.services)) { 
-                setServices(res.data.services); 
+            // Fix: Check res.services (flat structure) OR res.data.services (legacy)
+            const list = res.services || (res.data && res.data.services) || [];
+            if(res && res.status === 'success' && Array.isArray(list)) { 
+                setServices(list); 
             } else { 
                 setServices([]); 
             } 
