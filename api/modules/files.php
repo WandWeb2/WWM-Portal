@@ -69,15 +69,15 @@ function handleUploadFile($pdo, $i, $secrets) {
     $client = $cStmt->fetch();
     
     $folderName = preg_replace('/[^A-Za-z0-9 _-]/', '', $client['business_name'] ?: ($client['full_name'] ?: "Client_$clientId"));
-    
     $rootId = findOrCreateFolder($token, 'WandWeb Clients');
     $clientIdFolder = findOrCreateFolder($token, $folderName, $rootId);
     $sharedId = findOrCreateFolder($token, 'Shared Files', $clientIdFolder);
 
     // 3. Upload or Link
-    $driveId = null; $mime = 'link'; $size = 0; $filename = strip_tags($i['filename']);
+    $driveId = null; $mime = 'link'; $size = 0; $filename = strip_tags($i['filename'] ?? 'Untitled');
     
-    if (!empty($_FILES['file']['name'])) {
+    // Handle File Upload
+    if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
         $filename = $_FILES['file']['name'];
         $mime = mime_content_type($_FILES['file']['tmp_name']);
         $size = $_FILES['file']['size'];
@@ -95,17 +95,20 @@ function handleUploadFile($pdo, $i, $secrets) {
         $res = json_decode(curl_exec($ch), true);
         curl_close($ch);
         
-        if (empty($res['id'])) sendJson('error', 'Drive Upload Failed');
+        if (empty($res['id'])) sendJson('error', 'Drive Upload Failed: ' . json_encode($res));
         $driveId = "drive:" . $res['id'];
-    } else {
+    } elseif (!empty($i['external_url'])) {
         $driveId = strip_tags($i['external_url']);
+    } else {
+        $err = $_FILES['file']['error'] ?? 'No file';
+        sendJson('error', "No valid file or link provided (Code $err)");
     }
 
     // 4. Database Insert
     $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, uploader_id INTEGER, filename TEXT, external_url TEXT, file_type TEXT, filesize INTEGER, project_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
         ->execute([$clientId, $u['uid'], $filename, $driveId, $mime, $size, $pid]);
-    
+
     $fileId = $pdo->lastInsertId();
     sendJson('success', 'File Saved', ['file_id' => $fileId, 'filename' => $filename, 'file_type' => $mime]);
 }

@@ -704,6 +704,24 @@ window.FilesView = ({ token, role }) => {
     );
 };
 
+const ServiceCard = ({ product, isAdmin, onBuy, onEdit, onDelete, onToggleVisibility }) => {
+    const Icons = window.Icons;
+    const [selectedPriceIdx, setSelectedPriceIdx] = React.useState(0);
+    if (!product || !product.prices || product.prices.length === 0) return null;
+    const price = product.prices[selectedPriceIdx] || product.prices[0];
+    const isHidden = product.is_hidden;
+    const actionLabel = price.interval !== 'one-time' ? 'Subscribe' : 'Buy';
+    return (
+        <div className={`bg-white p-6 rounded-xl border hover:border-[#dba000] relative group transition-all ${isHidden ? 'opacity-60 bg-slate-50' : ''}`}>
+            {isAdmin && (<div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white p-1 rounded shadow z-10"><button onClick={() => onToggleVisibility(product.id, isHidden)} className="text-slate-500 hover:text-[#2c3259]" title={isHidden ? "Show" : "Hide"}>{isHidden ? <Icons.EyeOff size={16}/> : <Icons.Eye size={16}/>}</button><button onClick={() => onEdit(product)} className="text-slate-400 hover:text-blue-500"><Icons.Edit size={16}/></button><button onClick={() => onDelete(product.id)} className="text-slate-400 hover:text-red-500"><Icons.Trash size={16}/></button></div>)}
+            {product.image && <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded-lg mb-4" />}
+            <h3 className="font-bold text-lg text-[#2c3259]">{product.name}</h3><p className="text-sm text-slate-500 mb-4 line-clamp-2">{product.description}</p>
+            {product.prices.length > 1 && (<div className="flex gap-2 mb-4 overflow-x-auto pb-2">{product.prices.map((p, idx) => (<button key={p.id} onClick={() => setSelectedPriceIdx(idx)} className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${selectedPriceIdx === idx ? 'bg-[#2c3259] text-white border-[#2c3259]' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'}`}>{p.interval === 'one-time' ? 'Once' : p.interval}</button>))}</div>)}
+            <div className="flex justify-between items-center mt-auto pt-4 border-t border-slate-100"><div><span className="font-bold text-xl">${price.amount}</span><span className="text-xs text-slate-400 font-normal ml-1">{price.currency} {price.interval!=='one-time'?'/'+price.interval:''}</span></div>{!isAdmin && <button onClick={() => onBuy(price.id, price.interval)} className="bg-[#dba000] hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm">{actionLabel}</button>}</div>
+        </div>
+    );
+};
+
 window.ServicesView = ({ token, role }) => {
     const Icons = window.Icons;
     const [services, setServices] = React.useState([]); 
@@ -2527,10 +2545,8 @@ window.StandaloneDebugPanel = ({ token }) => {
                 created_at: new Date().toISOString(),
                 source: 'test_' + testName
             };
+            // FIX: Do NOT call loadLogs() here. Trust the local update.
             setLogs(prev => [newLog, ...prev]);
-            
-            // Reload all logs after a moment
-            setTimeout(loadLogs, 500);
         } catch (error) {
             console.error(`[StandaloneDebug] Test failed:`, error);
             setLogs(prev => [{

@@ -364,8 +364,20 @@ function fetchWandWebContext() {
     ";
 }
 
-function notifyAllAdmins($pdo, $msg) {
-    notifyAllAdminsForProject($pdo, 0, $msg);
+function notifyAllAdmins($pdo, $message, $type = 'system', $targetId = 0) {
+    try {
+        $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
+        $admins = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $insert = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) VALUES (?, ?, ?, ?)");
+        
+        foreach ($admins as $uid) {
+            $insert->execute([$uid, $message, $type, $targetId]);
+        }
+        return count($admins);
+    } catch (Exception $e) {
+        return 0;
+    }
 }
 
 ?>

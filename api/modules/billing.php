@@ -310,6 +310,46 @@ if (!function_exists('getOrSyncStripeId')) {
         sendJson('success', 'Billing Loaded', ['invoices' => $invoices, 'subscriptions' => $subscriptions, 'data' => ['invoices' => $invoices]]);
     }
 
+    function handleGetBilling($pdo, $input, $secrets) {
+        $user = verifyAuth($input);
+        $stripe_id = getOrSyncStripeId($pdo, $user['id']);
+        if (!$stripe_id) return sendJson('error', 'No Stripe account linked');
+        
+        $invoices = []; $subscriptions = [];
+        
+        // Fetch Invoices
+        $rawInv = stripeRequest($secrets, 'GET', "invoices?customer=$stripe_id&limit=10&expand[]=data.customer");
+        if (isset($rawInv['data'])) {
+            foreach ($rawInv['data'] as $inv) {
+                $invoices[] = [
+                    'id' => $inv['id'],
+                    'number' => $inv['number'],
+                    'amount' => $inv['total'] / 100,
+                    'status' => $inv['status'],
+                    'date' => date('Y-m-d', $inv['created']),
+                    'pdf' => $inv['hosted_invoice_url'] ?? $inv['invoice_pdf'] ?? ''
+                ];
+            }
+        }
+        
+        // Fetch Subscriptions
+        $rawSub = stripeRequest($secrets, 'GET', "subscriptions?customer=$stripe_id&limit=10&expand[]=data.plan.product");
+        if (isset($rawSub['data'])) {
+            foreach ($rawSub['data'] as $sub) {
+                $subscriptions[] = [
+                    'id' => $sub['id'],
+                    'plan' => $sub['items']['data'][0]['price']['product']['name'] ?? 'Unknown',
+                    'amount' => $sub['items']['data'][0]['price']['unit_amount'] / 100 ?? 0,
+                    'interval' => $sub['items']['data'][0]['price']['recurring']['interval'] ?? 'one-time',
+                    'status' => $sub['status'],
+                    'next_bill' => date('Y-m-d', $sub['current_period_end'] ?? time())
+                ];
+            }
+        }
+        
+        sendJson('success', 'Billing Loaded', ['invoices' => $invoices, 'subscriptions' => $subscriptions, 'data' => ['invoices' => $invoices]]);
+    }
+
     function handleGetBillingFeed($pdo, $input, $secrets) {
         $user = verifyAuth($input);
         $stripe_id = getOrSyncStripeId($pdo, $user['id']);

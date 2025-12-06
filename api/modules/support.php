@@ -446,7 +446,11 @@ function handleEscalateTicket($pdo, $input) {
     $msg = "[First Mate] First Mate AI here. Second Mate has flagged this. I've summoned the Captain (Admin). Stand by.";
     $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $msg]);
 
-    createNotification($pdo, 'admin', "Ticket #$ticketId Escalated to First Mate.");
+    // Use robust notification
+    if (function_exists('notifyAllAdmins')) {
+        notifyAllAdmins($pdo, "Ticket #$ticketId Escalated to First Mate", 'ticket', $ticketId);
+    }
+    
     sendJson('success','Escalated');
 }
 
