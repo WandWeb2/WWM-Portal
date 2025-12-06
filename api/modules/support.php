@@ -86,9 +86,13 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
 
     $kb = function_exists('fetchWandWebContext') ? fetchWandWebContext() : "Service: Web Design.";
 
-    // 3. THE "INTAKE & DISPATCH" PROMPT
+    // Define Service Context (Hardcoded for reliability until dynamic sync is built)
+    $serviceList = "Web Design, WordPress Maintenance, SEO Optimization, Content Writing, Graphic Design, Hosting Management";
+
+    // 3. THE "AGENCY ACCOUNT MANAGER" PROMPT
     $systemPrompt = "
     CONTEXT: $kb
+    OFFERED SERVICES: $serviceList
     
     CLIENT DOSSIER:
     - Name: {$client['full_name']}
@@ -96,30 +100,28 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
     - Email: {$client['email']}
     - Billing: $billingContext
     
-    PERSONAS:
-    1. [Second Mate] (Tier 1): Friendly, helpful. Answers generic questions.
-    2. [First Mate] (Tier 2): Authoritative, capable.
+    YOUR ROLE:
+    You are the Senior Account Manager for Wandering Webmaster. 
     
-    CRITICAL RULES:
-    - You CANNOT edit websites, change billing, or execute technical tasks.
-    - If the client requests work (e.g., 'Update my logo'):
-      1. Confirm details.
-      2. State: \"I have placed a formal work order and notified the humans who will process this.\"
-      3. Include 'humans' in your reply to trigger escalation notification.
-    - NEVER direct users to external contact forms.
+    CRITICAL BEHAVIOR RULES:
+    1. NO DIY TUTORIALS: If a user asks \"How do I add a page?\" or \"How do I fix this error?\", DO NOT teach them. They pay us to do it.
+    2. SELL THE SOLUTION: Offer to perform the task for them.
+       - Bad: \"Go to Pages > Add New.\"
+       - Good: \"I can certainly handle that update for you. I've created a work order for the design team to add that page. Shall we proceed?\"
+    3. SERVICE AWARENESS: If they mention a need (e.g., \"slow site\"), map it to our services (e.g., \"SEO/Maintenance Package\").
+    4. TONE: Professional, Concierge, Proactive. Use the client's name.
 
     OUTPUT FORMATS:
 
-    SCENARIO A: Simple Reply (Second Mate)
+    SCENARIO A: Simple Answer/Chat (Second Mate)
     Output string: \"[Second Mate] Your answer here...\"
 
-    SCENARIO B: Escalation/Work Request (First Mate)
-    Output a RAW JSON ARRAY of exactly 4 strings:
+    SCENARIO B: Work Order Needed / Technical Task (First Mate)
+    Output a RAW JSON ARRAY of exactly 3 strings (Removed redundant messages):
     [
-      \"[Second Mate] I cannot perform that update directly. Summoning the First Mate to process this work order.\",
-      \"[System] First Mate AI has entered the chat.\",
-      \"[First Mate] Hello {$client['full_name']}. I have received your request. I have created a work order and notified the humans to process this immediately. Is there anything else to add?\",
-      \"[System] Both AI agents have left the chat. Ticket handed over to human support.\"
+      \"[Second Mate] I'll get our technical team on this right away. Summoning the First Mate.\",
+      \"[First Mate] Hello {$client['full_name']}. I have received your request. I have opened a formal work order and alerted the humans. Is there anything specific you need added?\",
+      \"[System] Ticket escalated to Human Support. AI standing down.\"
     ]
     ";
 
@@ -272,7 +274,7 @@ function handleReplyTicket($pdo, $i, $s) {
     $u = verifyAuth($i); 
     $tid = (int)$i['ticket_id']; 
 
-    // 1. STRICT LOCK: Check status before allowing reply
+    // 1. Fetch Current Status to prevent "Zombie AI"
     $statusCheck = $pdo->prepare("SELECT status FROM tickets WHERE id = ?");
     $statusCheck->execute([$tid]);
     $currentStatus = $statusCheck->fetchColumn();
@@ -288,15 +290,27 @@ function handleReplyTicket($pdo, $i, $s) {
     $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message, is_internal) VALUES (?, ?, ?, ?)"); 
     $stmt->execute([$tid, $u['uid'], strip_tags($i['message']), $isInternal]); 
     
-    // 3. Update Ticket Status
-    $newStatus = ($u['role'] === 'admin') ? 'waiting_client' : 'open'; 
-    if ($isInternal) $newStatus = 'open'; // Internal notes don't change status
+    // 3. Determine New Status (The Fix)
+    if ($u['role'] === 'admin') {
+        $newStatus = 'waiting_client';
+    } else {
+        // If client replies to an ESCALATED ticket, keep it escalated (don't wake the AI).
+        // Otherwise, set to open to trigger AI triage.
+        $newStatus = ($currentStatus === 'escalated') ? 'escalated' : 'open';
+    }
+    
+    if ($isInternal) $newStatus = $currentStatus; // Internal notes never change status
     
     $pdo->prepare("UPDATE tickets SET updated_at = NOW(), status = ? WHERE id = ?")->execute([$newStatus, $tid]); 
     
     // 4. Trigger AI / Notifications
-    if ($u['role'] === 'client') {
+    // ONLY trigger AI if the ticket is NOT escalated
+    if ($u['role'] === 'client' && $newStatus !== 'escalated') {
         triggerSupportAI($pdo, $s, $tid);
+    }
+    
+    // Always notify partner/admin on client reply
+    if ($u['role'] === 'client') {
         notifyPartnerIfAssigned($pdo, $u['uid'], "{$u['name']} replied to Ticket #$tid");
     }
     

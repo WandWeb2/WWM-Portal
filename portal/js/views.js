@@ -2295,25 +2295,21 @@ const TicketThread = ({ ticket, token, role, onUpdate }) => {
             
             if(res.status==='success') {
                 const allMsgs = res.messages;
-                // Find what the backend added (AI replies)
-                // Logic: Messages that have sender_id=0 and ID > any message we currently have (excluding temp)
+                // Calculate if there are new AI messages to type out
                 const realMsgs = messages.filter(m => m.id !== tempId);
                 const lastRealId = realMsgs.length > 0 ? realMsgs[realMsgs.length - 1].id : 0;
-                
                 const newAiMsgs = allMsgs.filter(m => m.id > lastRealId && m.sender_id == 0);
-                const newHumanMsgs = allMsgs.filter(m => m.id > lastRealId && m.sender_id != 0);
 
-                // 1. Set state to "History + User Message (Confirmed)"
-                // We replace the temp message with the real one from server if possible, or just use the full list minus AI stuff
+                // 1. Update list immediately (excluding new AI msgs to prevent double render)
                 const nonAiList = allMsgs.filter(m => m.sender_id != 0 || m.id <= lastRealId);
                 setMessages(nonAiList);
 
-                // 2. Trigger Theatrical Typing for AI messages
+                // 2. Trigger Typing Animation
                 if (newAiMsgs.length > 0) {
+                    // Keep 'isThinking' true UNTIL the typing finishes
                     window.simulateTyping(newAiMsgs, 50, () => {
-                        setIsThinking(false);
-                        // Final sync to ensure nothing missed
-                        setMessages(allMsgs); 
+                        setIsThinking(false); // <--- Stop animation only after typing is done
+                        setMessages(allMsgs); // Final sync
                     });
                 } else {
                     setIsThinking(false);
