@@ -1,6 +1,6 @@
 <?php
 // /api/modules/support.php
-// Version: 29.0 - Partner Access Added
+// Version: 29.5 - Escalation Notifications Hardened
 
 function ensureSupportSchema($pdo) {
     // 1. Create Tables (Complete Schema) - SQLite/MySQL compatible
@@ -143,7 +143,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
             $pdo->prepare("UPDATE tickets SET status = 'escalated' WHERE id = ?")->execute([$ticketId]);
             $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")
                 ->execute([$ticketId, "[System] The AI could not process the media/context of this message and has passed it to a human agent."]);
-            notifyAllAdminsForEscalation($pdo, $ticketId, "Ticket #$ticketId Escalated: Unreadable Media/Context");
+            sendEscalationNotifications($pdo, $ticketId, "Ticket #$ticketId Escalated: Unreadable Media/Context");
             return;
         }
 
@@ -186,7 +186,7 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
         if ($newStatus !== $ticket['status']) {
             $pdo->prepare("UPDATE tickets SET status = ? WHERE id = ?")->execute([$newStatus, $ticketId]);
             if ($newStatus === 'escalated') {
-                notifyAllAdminsForEscalation($pdo, $ticketId, "Ticket #$ticketId Escalated to Human Support");
+                sendEscalationNotifications($pdo, $ticketId, "Ticket #$ticketId Escalated to Human Support");
             }
         }
 
@@ -446,12 +446,34 @@ function handleEscalateTicket($pdo, $input) {
     $msg = "[First Mate] First Mate AI here. Second Mate has flagged this. I've summoned the Captain (Admin). Stand by.";
     $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)")->execute([$ticketId, $msg]);
 
-    // Use robust notification
-    if (function_exists('notifyAllAdmins')) {
-        notifyAllAdmins($pdo, "Ticket #$ticketId Escalated to First Mate", 'ticket', $ticketId);
-    }
+    sendEscalationNotifications($pdo, $ticketId, $input['reason'] ?? "Ticket #$ticketId Escalated to First Mate");
     
     sendJson('success','Escalated');
+}
+
+function sendEscalationNotifications($pdo, $ticketId, $reason = '') {
+    try {
+        $stmt = $pdo->prepare("SELECT t.user_id, t.subject, u.full_name FROM tickets t LEFT JOIN users u ON t.user_id = u.id WHERE t.id = ?");
+        $stmt->execute([$ticketId]);
+        $row = $stmt->fetch();
+
+        $subject = $row['subject'] ?? 'Support Ticket';
+        $clientName = $row['full_name'] ?? 'Client';
+        $message = trim($reason) ?: "Ticket #$ticketId Escalated";
+        $payload = "$message - $clientName: $subject";
+
+        if (function_exists('notifyAllAdminsForEscalation')) {
+            notifyAllAdminsForEscalation($pdo, $ticketId, $payload);
+        } elseif (function_exists('notifyAllAdmins')) {
+            notifyAllAdmins($pdo, $payload, 'ticket', $ticketId);
+        }
+
+        if (!empty($row['user_id'])) {
+            notifyPartnerIfAssigned($pdo, $row['user_id'], $payload);
+        }
+    } catch (Exception $e) {
+        error_log("Escalation notification failed: " . $e->getMessage());
+    }
 }
 
 ?>

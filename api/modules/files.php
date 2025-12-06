@@ -1,8 +1,11 @@
 <?php
-// /api/modules/files.php
-// Version: 31.0 - Google Drive Integration (Secure Proxy)
+// =============================================================================
+// Wandering Webmaster Custom Component
+// Agency: Wandering Webmaster (wandweb.co)
+// Client: Portal Architecture
+// Version: 31.2 - Fixed Upload Return Data
+// =============================================================================
 
-// --- DRIVE API HELPERS ---
 function driveRequest($token, $method, $endpoint, $body = null, $contentType = 'application/json') {
     $ch = curl_init("https://www.googleapis.com/drive/v3/" . ltrim($endpoint, '/'));
     $headers = ["Authorization: Bearer $token", "Content-Type: $contentType"];
@@ -26,11 +29,8 @@ function findOrCreateFolder($token, $name, $parentId = 'root') {
     return $create['id'] ?? null;
 }
 
-// --- HANDLERS ---
-
 function handleGetFiles($pdo, $i) {
     $u = verifyAuth($i);
-    // Role-Based Access Control (RBAC)
     if ($u['role'] === 'admin') {
         $sql = "SELECT f.*, COALESCE(u.full_name, u.email) as client_name FROM shared_files f JOIN users u ON f.client_id = u.id ORDER BY f.created_at DESC";
         $stmt = $pdo->query($sql);
@@ -51,7 +51,6 @@ function handleUploadFile($pdo, $i, $secrets) {
     $u = verifyAuth($i);
     $pid = (int)($i['project_id'] ?? 0);
     
-    // 1. Target Client Logic
     $clientId = $u['uid'];
     if ($pid > 0) {
         $p = $pdo->prepare("SELECT user_id FROM projects WHERE id = ?");
@@ -62,7 +61,6 @@ function handleUploadFile($pdo, $i, $secrets) {
         $clientId = (int)$i['client_id'];
     }
 
-    // 2. Drive Folder Logic
     $token = getGoogleAccessToken($secrets);
     $cStmt = $pdo->prepare("SELECT full_name, business_name FROM users WHERE id = ?");
     $cStmt->execute([$clientId]);
@@ -73,16 +71,13 @@ function handleUploadFile($pdo, $i, $secrets) {
     $clientIdFolder = findOrCreateFolder($token, $folderName, $rootId);
     $sharedId = findOrCreateFolder($token, 'Shared Files', $clientIdFolder);
 
-    // 3. Upload or Link
     $driveId = null; $mime = 'link'; $size = 0; $filename = strip_tags($i['filename'] ?? 'Untitled');
     
-    // Handle File Upload
     if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
         $filename = $_FILES['file']['name'];
         $mime = mime_content_type($_FILES['file']['tmp_name']);
         $size = $_FILES['file']['size'];
         
-        // Multipart Upload
         $meta = json_encode(['name' => $filename, 'parents' => [$sharedId]]);
         $boundary = '-------' . md5(time());
         $body = "--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n--$boundary\r\nContent-Type: $mime\r\n\r\n" . file_get_contents($_FILES['file']['tmp_name']) . "\r\n--$boundary--";
@@ -104,28 +99,26 @@ function handleUploadFile($pdo, $i, $secrets) {
         sendJson('error', "No valid file or link provided (Code $err)");
     }
 
-    // 4. Database Insert
     $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, uploader_id INTEGER, filename TEXT, external_url TEXT, file_type TEXT, filesize INTEGER, project_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
         ->execute([$clientId, $u['uid'], $filename, $driveId, $mime, $size, $pid]);
 
     $fileId = $pdo->lastInsertId();
+    // CRITICAL FIX: Return file details so frontend knows it succeeded
     sendJson('success', 'File Saved', ['file_id' => $fileId, 'filename' => $filename, 'file_type' => $mime]);
 }
 
 function handleDownloadFile($pdo, $i, $secrets) {
-    // SECURE PROXY STREAM
     $u = verifyAuth($i);
     $stmt = $pdo->prepare("SELECT * FROM shared_files WHERE id = ?");
     $stmt->execute([(int)$i['file_id']]);
     $file = $stmt->fetch();
     
     if (!$file) die("File not found");
-    // Security Check
     if ($u['role'] !== 'admin' && $u['uid'] != $file['client_id'] && $u['role'] !== 'partner') die("Access Denied");
 
     $ref = $file['external_url'];
-    if (strpos($ref, 'drive:') === false) { header("Location: $ref"); exit; } // Legacy fallback
+    if (strpos($ref, 'drive:') === false) { header("Location: $ref"); exit; }
     
     $token = getGoogleAccessToken($secrets);
     $googleId = str_replace('drive:', '', $ref);

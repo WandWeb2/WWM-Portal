@@ -1,6 +1,6 @@
 <?php
 // /api/modules/utils.php
-// Version: 35.0 - Dynamic AI Model Discovery
+// Version: 33.0 - Hardened Notifications
 
 function getDBConnection($secrets) {
     if (!empty($secrets['DB_DSN'])) {
@@ -118,6 +118,14 @@ function ensureSettingsSchema($pdo) {
     )");
 }
 
+function ensureNotificationSchema($pdo) {
+    $idType = getSqlType($pdo, 'serial');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id $idType, user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0, target_type TEXT DEFAULT NULL, target_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    try { $pdo->exec("ALTER TABLE notifications ADD COLUMN is_read INTEGER DEFAULT 0"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_type TEXT DEFAULT NULL"); } catch (Exception $e) {}
+    try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_id INTEGER DEFAULT 0"); } catch (Exception $e) {}
+}
+
 function ensureLogSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
     $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
@@ -208,6 +216,7 @@ function sendInvite($pdo, $email) {
 
 function createNotification($pdo, $userId, $message, $type = null, $id = 0) {
     if (!$userId) return;
+    ensureNotificationSchema($pdo);
     $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) VALUES (?, ?, ?, ?)");
     $stmt->execute([$userId, $message, $type, $id]);
 }
@@ -365,6 +374,7 @@ function fetchWandWebContext() {
 }
 
 function notifyAllAdmins($pdo, $message, $type = 'system', $targetId = 0) {
+    ensureNotificationSchema($pdo);
     try {
         $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
         $admins = $stmt->fetchAll(PDO::FETCH_COLUMN);
@@ -376,6 +386,7 @@ function notifyAllAdmins($pdo, $message, $type = 'system', $targetId = 0) {
         }
         return count($admins);
     } catch (Exception $e) {
+        logSystemEvent($pdo, "notifyAllAdmins failed: " . $e->getMessage(), 'error');
         return 0;
     }
 }

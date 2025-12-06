@@ -1,9 +1,9 @@
 /* =============================================================================
-   WandWeb Portal Views
-   File: /portal/js/views.js
-   Version: 30.2 (Fix Service Parsing)
-   ============================================================================= */
-console.log("Views.js v30.1 - Force Loaded"); // Debugging confirmation
+    WandWeb Portal Views
+    File: /portal/js/views.js
+    Version: 31.0 (Resilience + Sorting)
+    ============================================================================= */
+console.log("Views.js v31.0 - Force Loaded"); // Debugging confirmation
 
 const API_URL = '/api/portal_api.php'; 
 const LOGO_URL = "https://wandweb.co/wp-content/uploads/2025/11/WEBP-LQ-Logo-with-text-mid-White.webp";
@@ -355,7 +355,8 @@ window.ClientsView = ({ token, role }) => {
         }
     };
 
-    const filteredClients = clients.filter(c => 
+    const safeClients = Array.isArray(clients) ? clients : [];
+    const filteredClients = safeClients.filter(c => 
         (c.full_name && c.full_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (c.business_name && c.business_name.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -1010,13 +1011,20 @@ window.ServicesView = ({ token, role }) => {
     const [editingItem, setEditingItem] = React.useState(null); 
     const isAdmin = role === 'admin';
 
+    const normalizeServices = (payload) => {
+        if (Array.isArray(payload)) return payload;
+        if (payload && typeof payload === 'object') return Object.values(payload).flat();
+        return [];
+    };
+
     React.useEffect(() => { 
         setLoading(true); 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_services', token }) })
         .then(res => { 
             // Fix: Check res.services (flat structure) OR res.data.services (legacy)
-            const list = res.services || (res.data && res.data.services) || [];
-            if(res && res.status === 'success' && Array.isArray(list)) { 
+            const rawList = res.services || (res.data && res.data.services) || [];
+            const list = normalizeServices(rawList);
+            if(res && res.status === 'success') { 
                 setServices(list); 
             } else { 
                 setServices([]); 
