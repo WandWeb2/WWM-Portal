@@ -829,6 +829,7 @@ window.FilesView = ({ token, role }) => {
     const [loading, setLoading] = React.useState(true); 
     const [show, setShow] = React.useState(false); 
     const [clients, setClients] = React.useState([]); 
+    const [filterClient, setFilterClient] = React.useState('');
     const isAdmin = role === 'admin'; 
     
     const fetchData = () => { 
@@ -864,6 +865,8 @@ window.FilesView = ({ token, role }) => {
         if(res.status === 'success') fetchData(); else alert(res.message);
     };
 
+    const filteredFiles = files.filter(f => !filterClient || f.client_id == filterClient);
+
     if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>;    
 
     return (
@@ -872,13 +875,27 @@ window.FilesView = ({ token, role }) => {
                 <h2 className="text-2xl font-bold text-[#2c3259]">Files & Assets</h2>
                 <button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-sm flex items-center gap-2"><Icons.Upload size={16}/> Upload File</button>
             </div>
+            {isAdmin && (
+                <div className="flex gap-3 items-center bg-white p-4 rounded-lg border shadow-sm">
+                    <label className="text-sm font-bold text-slate-600">Filter by Client:</label>
+                    <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} className="p-2 border rounded text-sm">
+                        <option value="">-- All Files --</option>
+                        {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                    </select>
+                    {filterClient && (
+                        <button onClick={() => setFilterClient('')} className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 border rounded hover:bg-slate-50">
+                            Clear Filter
+                        </button>
+                    )}
+                </div>
+            )}
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b text-slate-500 uppercase text-xs">
                         <tr><th className="p-4">Name</th>{isAdmin && <th className="p-4">Client</th>}<th className="p-4">Type</th><th className="p-4 text-right">Action</th></tr>
                     </thead>
                     <tbody>
-                        {files.length === 0 ? <tr><td colSpan="5" className="p-6 text-center text-slate-400">No files found.</td></tr> : files.map(f => {
+                        {filteredFiles.length === 0 ? <tr><td colSpan="5" className="p-6 text-center text-slate-400">No files found.</td></tr> : filteredFiles.map(f => {
                             const isDrive = f.external_url && f.external_url.startsWith('drive:');
                             // Secure Proxy URL
                             const url = isDrive ? `${API_URL}?action=download_file&token=${encodeURIComponent(token)}&file_id=${f.id}` : f.external_url;
@@ -950,13 +967,14 @@ window.ServicesView = ({ token, role }) => {
     const groupedServices = services.reduce((acc, service) => { const cat = service.category || 'General'; if (!acc[cat]) acc[cat] = []; acc[cat].push(service); return acc; }, {});
     const sortedCategories = Object.keys(groupedServices).sort((a, b) => ((groupedServices[a][0]?.cat_sort ?? 999) - (groupedServices[b][0]?.cat_sort ?? 999)));
     sortedCategories.forEach(cat => { groupedServices[cat].sort((a, b) => (a.prod_sort ?? 999) - (b.prod_sort ?? 999)); });
+    const categories = [...new Set(services.map(s => s.category || 'General'))].sort();
 
     if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>;
     return (
         <div className="space-y-8 animate-fade-in"><div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-[#2c3259]">Services</h2><div className="flex gap-2">{isAdmin && <button onClick={()=>setModal('sort')} className="bg-slate-100 text-slate-600 px-3 py-2 rounded hover:bg-slate-200" title="Arrange"><Icons.Menu size={18}/></button>}{isAdmin && <button onClick={()=>setModal('product')} className="bg-[#2c3259] text-white px-4 py-2 rounded flex items-center gap-1"><Icons.Plus size={16}/> New Product</button>}</div></div>{sortedCategories.length === 0 ? <div className="text-center p-10 text-slate-400 border-2 border-dashed rounded-xl">No services found.</div> : sortedCategories.map(cat => (<div key={cat}><h3 className="text-xl font-bold text-[#2c3259] mb-4 border-b border-slate-200 pb-2">{cat}</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">{groupedServices[cat].map(s => (<ServiceCard key={s.id} product={s} isAdmin={isAdmin} onBuy={handleBuy} onEdit={(p) => { setEditingItem(p); setModal('edit'); }} onDelete={handleDeleteProduct} onToggleVisibility={handleToggleVisibility}/>))}</div></div>))}
         {modal==='sort' && <ServiceSortModal services={groupedServices} onClose={()=>setModal(null)} onSave={handleSaveOrder} />}
-        {modal==='product' && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>setModal(null)} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">New Product</h3><form onSubmit={handleCreateProduct} className="space-y-4"><input name="name" placeholder="Name" className="w-full p-2 border rounded" required/><input name="description" placeholder="Desc" className="w-full p-2 border rounded"/><input name="category" placeholder="Category" className="w-full p-2 border rounded" /><div className="flex gap-2"><input name="amount" type="number" placeholder="$" className="w-full p-2 border rounded" required/><select name="interval" className="p-2 border rounded"><option value="one-time">Once</option><option value="month">Month</option><option value="year">Year</option></select></div><button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">Save</button></form></div></div>}
-        {modal==='edit' && editingItem && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>{setModal(null); setEditingItem(null);}} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">Edit Product</h3><form onSubmit={handleUpdateProduct} className="space-y-4"><input name="name" defaultValue={editingItem.name} className="w-full p-2 border rounded" required/><textarea name="description" defaultValue={editingItem.description} className="w-full p-2 border rounded h-24"/><input name="category" defaultValue={editingItem.category} className="w-full p-2 border rounded" placeholder="Category"/><button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">Update Details</button></form></div></div>)}
+        {modal==='product' && <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>setModal(null)} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">New Product</h3><form onSubmit={handleCreateProduct} className="space-y-4"><input name="name" placeholder="Name" className="w-full p-2 border rounded" required/><input name="description" placeholder="Desc" className="w-full p-2 border rounded"/><div><input name="category" placeholder="Category" list="categoryList" className="w-full p-2 border rounded" /><datalist id="categoryList">{categories.map((cat, i) => <option key={i} value={cat} />)}</datalist></div><div className="flex gap-2"><input name="amount" type="number" placeholder="$" className="w-full p-2 border rounded" required/><select name="interval" className="p-2 border rounded"><option value="one-time">Once</option><option value="month">Month</option><option value="year">Year</option></select></div><button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">Save</button></form></div></div>}
+        {modal==='edit' && editingItem && (<div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"><div className="bg-white p-8 rounded-xl w-full max-w-md relative"><button onClick={()=>{setModal(null); setEditingItem(null);}} className="absolute top-4 right-4"><Icons.Close/></button><h3 className="font-bold text-xl mb-4">Edit Product</h3><form onSubmit={handleUpdateProduct} className="space-y-4"><input name="name" defaultValue={editingItem.name} className="w-full p-2 border rounded" required/><textarea name="description" defaultValue={editingItem.description} className="w-full p-2 border rounded h-24"/><div><input name="category" defaultValue={editingItem.category} list="categoryListEdit" className="w-full p-2 border rounded" placeholder="Category"/><datalist id="categoryListEdit">{categories.map((cat, i) => <option key={i} value={cat} />)}</datalist></div><button className="w-full bg-[#2c3259] text-white p-2 rounded font-bold">Update Details</button></form></div></div>)}
         </div>
     );
 };
