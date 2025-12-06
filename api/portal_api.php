@@ -71,6 +71,7 @@ try {
 
     switch ($action) {
         case 'login': handleLogin($pdo, $input, $secrets); break;
+        case 'request_password_reset': handleRequestPasswordReset($pdo, $input, $secrets); break;
         case 'get_admin_dashboard': handleGetAdminDashboard($pdo, $input, $secrets); break;
         case 'get_projects': handleGetProjects($pdo, $input); break;
         case 'get_billing_overview': handleGetBilling($pdo, $input, $secrets); break;

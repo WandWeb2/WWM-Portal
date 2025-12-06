@@ -1049,10 +1049,228 @@ window.AdminDashboard = ({ token, setView }) => {
 };
 
 window.LoginScreen = ({ setSession }) => {
-    const [isRegistering, setIsRegistering] = React.useState(false); const [email, setEmail] = React.useState(""); const [password, setPassword] = React.useState(""); const [confirmPass, setConfirmPass] = React.useState(""); const [name, setName] = React.useState(""); const [business, setBusiness] = React.useState(""); const [error, setError] = React.useState(""); const [loading, setLoading] = React.useState(false);
-    React.useEffect(() => { const p = new URLSearchParams(window.location.search); if (p.get('action') === 'register') setIsRegistering(true); }, []);
-    const handleSubmit = async (e) => { e.preventDefault(); setLoading(true); setError(""); try { if (isRegistering) { if (password !== confirmPass) throw new Error("Passwords do not match"); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'register', email, password, name, business_name: business }) }); if (res.status === 'success') { const s = { token: res.token, user_id: res.user.id, role: res.user.role, name: res.user.name }; localStorage.setItem('wandweb_session', JSON.stringify(s)); setSession(s); } else setError(res.message); } else { const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'login', email, password }) }); if (res.status === 'success') { const s = { token: res.token, user_id: res.user.id, role: res.user.role, name: res.user.name }; localStorage.setItem('wandweb_session', JSON.stringify(s)); setSession(s); } else setError(res.message); } } catch (err) { setError(err.message); } setLoading(false); };
-    return (<div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"><window.PortalBackground /><div className="w-full max-w-md bg-[#2c3259] p-10 rounded-2xl shadow-2xl border border-slate-600/50 relative z-10"><div className="text-center mb-8"><img src={LOGO_URL} className="h-20 mx-auto mb-4 object-contain"/><h1 className="text-2xl font-bold text-white">{isRegistering ? 'Create Account' : 'Client Portal'}</h1></div><form onSubmit={handleSubmit} className="space-y-5">{isRegistering && (<><div><label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Full Name</label><input value={name} onChange={e => setName(e.target.value)} className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white" required /></div><div><label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Business Name</label><input value={business} onChange={e => setBusiness(e.target.value)} className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white" required /></div></>)}<div><label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white" required /></div><div><label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white" required /></div>{isRegistering && <div><label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Confirm</label><input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white" required /></div>}{error && <div className="text-red-200 text-sm bg-red-900/50 p-2 rounded">{error}</div>}<button disabled={loading} className="w-full bg-[#dba000] text-white p-4 rounded-xl font-bold">{loading ? '...' : (isRegistering ? 'Create Account' : 'Sign In')}</button></form><button onClick={() => setIsRegistering(!isRegistering)} className="mt-6 text-slate-400 text-sm underline w-full text-center">{isRegistering ? "Sign In" : "Register"}</button></div></div>);
+    const [mode, setMode] = React.useState('login'); // login, register, forgot
+    const [email, setEmail] = React.useState("");
+    const [password, setPassword] = React.useState("");
+    const [confirmPass, setConfirmPass] = React.useState("");
+    const [name, setName] = React.useState("");
+    const [business, setBusiness] = React.useState("");
+    const [error, setError] = React.useState("");
+    const [success, setSuccess] = React.useState("");
+    const [loading, setLoading] = React.useState(false);
+
+    React.useEffect(() => {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get('action') === 'register') setMode('register');
+    }, []);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError("");
+        setSuccess("");
+
+        try {
+            if (mode === 'register') {
+                if (password !== confirmPass) throw new Error("Passwords do not match");
+                const res = await window.safeFetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'register',
+                        email,
+                        password,
+                        name,
+                        business_name: business
+                    })
+                });
+                if (res.status === 'success') {
+                    const s = {
+                        token: res.token,
+                        user_id: res.user.id,
+                        role: res.user.role,
+                        name: res.user.name
+                    };
+                    localStorage.setItem('wandweb_session', JSON.stringify(s));
+                    setSession(s);
+                } else {
+                    setError(res.message);
+                }
+            } else if (mode === 'forgot') {
+                const res = await window.safeFetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'request_password_reset',
+                        email
+                    })
+                });
+                if (res.status === 'success') {
+                    setSuccess('Password reset link sent! Returning to login...');
+                    setTimeout(() => {
+                        setMode('login');
+                        setEmail('');
+                        setSuccess('');
+                    }, 3000);
+                } else {
+                    setError(res.message);
+                }
+            } else {
+                // login mode
+                const res = await window.safeFetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'login',
+                        email,
+                        password
+                    })
+                });
+                if (res.status === 'success') {
+                    const s = {
+                        token: res.token,
+                        user_id: res.user.id,
+                        role: res.user.role,
+                        name: res.user.name
+                    };
+                    localStorage.setItem('wandweb_session', JSON.stringify(s));
+                    setSession(s);
+                } else {
+                    setError(res.message);
+                }
+            }
+        } catch (err) {
+            setError(err.message);
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+            <window.PortalBackground />
+            <div className="w-full max-w-md bg-[#2c3259] p-10 rounded-2xl shadow-2xl border border-slate-600/50 relative z-10">
+                <div className="text-center mb-8">
+                    <img src={LOGO_URL} className="h-20 mx-auto mb-4 object-contain" />
+                    <h1 className="text-2xl font-bold text-white">
+                        {mode === 'register' ? 'Create Account' : mode === 'forgot' ? 'Reset Password' : 'Client Portal'}
+                    </h1>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    {mode === 'register' && (
+                        <>
+                            <div>
+                                <label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Full Name</label>
+                                <input
+                                    value={name}
+                                    onChange={e => setName(e.target.value)}
+                                    className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Business Name</label>
+                                <input
+                                    value={business}
+                                    onChange={e => setBusiness(e.target.value)}
+                                    className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white"
+                                    required
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    <div>
+                        <label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Email</label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white"
+                            required
+                        />
+                    </div>
+
+                    {mode !== 'forgot' && (
+                        <div>
+                            <label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Password</label>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white"
+                                required
+                            />
+                        </div>
+                    )}
+
+                    {mode === 'register' && (
+                        <div>
+                            <label className="block text-xs font-bold text-[#2493a2] uppercase mb-2">Confirm Password</label>
+                            <input
+                                type="password"
+                                value={confirmPass}
+                                onChange={e => setConfirmPass(e.target.value)}
+                                className="w-full p-3.5 bg-slate-800/50 border border-slate-600 rounded-xl text-white"
+                                required
+                            />
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="text-red-200 text-sm bg-red-900/50 p-3 rounded border border-red-700">
+                            {error}
+                        </div>
+                    )}
+
+                    {success && (
+                        <div className="text-green-200 text-sm bg-green-900/50 p-3 rounded border border-green-700">
+                            {success}
+                        </div>
+                    )}
+
+                    <button
+                        disabled={loading}
+                        className="w-full bg-[#dba000] text-white p-4 rounded-xl font-bold hover:bg-[#c29000] disabled:opacity-50"
+                    >
+                        {loading ? 'Processing...' : (mode === 'register' ? 'Create Account' : mode === 'forgot' ? 'Send Reset Link' : 'Sign In')}
+                    </button>
+                </form>
+
+                <div className="mt-6 space-y-3 text-center text-sm">
+                    {mode === 'login' && (
+                        <>
+                            <button
+                                onClick={() => { setMode('forgot'); setError(''); setEmail(''); }}
+                                className="block w-full text-slate-400 hover:text-[#2493a2] underline"
+                            >
+                                Forgot Password?
+                            </button>
+                            <button
+                                onClick={() => { setMode('register'); setError(''); setEmail(''); }}
+                                className="block w-full text-slate-400 hover:text-[#2493a2] underline"
+                            >
+                                Create an Account
+                            </button>
+                        </>
+                    )}
+                    {mode === 'register' && (
+                        <button
+                            onClick={() => { setMode('login'); setError(''); setEmail(''); setPassword(''); }}
+                            className="block w-full text-slate-400 hover:text-[#2493a2] underline"
+                        >
+                            Back to Sign In
+                        </button>
+                    )}
+                    {mode === 'forgot' && (
+                        <button
+                            onClick={() => { setMode('login'); setError(''); setEmail(''); }}
+                            className="block w-full text-slate-400 hover:text-[#2493a2] underline"
+                        >
+                            Back to Sign In
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 };
 window.SetPasswordScreen = ({ token }) => { const [p, setP] = React.useState(""); const [c, setC] = React.useState(""); const handleSubmit = async (e) => { e.preventDefault(); if (p !== c) return alert("Mismatch"); const r = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'set_password', invite_token: token, password: p }) }); if (r.status === 'success') window.location.href = "/portal/"; else alert(r.message); }; return (<div className="min-h-screen flex items-center justify-center bg-slate-50"><form onSubmit={handleSubmit} className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm"><h2 className="text-xl font-bold mb-4">Set Password</h2><input type="password" placeholder="New Password" onChange={e=>setP(e.target.value)} className="w-full p-3 border rounded mb-2" required /><input type="password" placeholder="Confirm" onChange={e=>setC(e.target.value)} className="w-full p-3 border rounded mb-4" required /><button className="w-full bg-[#dba000] text-white p-3 rounded font-bold">Set</button></form></div>); };
 window.BillingView = ({ token, role }) => {
