@@ -247,6 +247,10 @@ window.FirstMate = ({ stats = {}, projects = [], token, role = 'admin', title })
 
     React.useEffect(() => { 
         const generateInsight = async () => { 
+            if (!projects || projects.length === 0) {
+                setInsight("Ready to grow? Explore our Services or click 'New Project' to get started!");
+                return;
+            }
             try {
                 const dataContext = { 
                     stats, 

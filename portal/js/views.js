@@ -830,11 +830,13 @@ window.FilesView = ({ token, role }) => {
     const [show, setShow] = React.useState(false); 
     const [clients, setClients] = React.useState([]); 
     const [filterClient, setFilterClient] = React.useState('');
+    const [selectedIds, setSelectedIds] = React.useState(new Set());
+    const [uploadStatus, setUploadStatus] = React.useState('');
     const isAdmin = role === 'admin'; 
     
     const fetchData = () => { 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_files', token }) })
-            .then(res => { if(res.status==='success') setFiles(res.files||[]); })
+            .then(res => { if(res.status==='success') { setFiles(res.files||[]); setSelectedIds(new Set()); } })
             .finally(()=>setLoading(false)); 
     };
     
@@ -845,70 +847,115 @@ window.FilesView = ({ token, role }) => {
 
     const handleUpload = async (e) => { 
         e.preventDefault(); 
+        const fileInput = e.target.querySelector('input[type="file"]');
+        const fileList = fileInput.files;
+        if (fileList.length === 0) return;
+
         const btn = e.target.querySelector('button');
-        btn.innerText = "Uploading to Drive..."; btn.disabled = true;
+        btn.disabled = true;
         
-        const f = new FormData(e.target); 
-        f.append('action', 'upload_file'); f.append('token', token); 
-        
-        try {
-            const r = await fetch(API_URL, { method: 'POST', body: f });
-            const d = await r.json();
-            if(d.status==='success') { setShow(false); fetchData(); } else alert(d.message);
-        } catch(e) { alert("Upload Failed"); }
-        btn.innerText = "Upload Now"; btn.disabled = false;
+        // Client ID logic
+        const formDataTemplate = new FormData(e.target); 
+        const targetClientId = formDataTemplate.get('client_id');
+
+        let successCount = 0;
+
+        for (let i = 0; i < fileList.length; i++) {
+            setUploadStatus(`Uploading ${i + 1}/${fileList.length}: ${fileList[i].name}...`);
+            const f = new FormData();
+            f.append('action', 'upload_file');
+            f.append('token', token);
+            f.append('file', fileList[i]);
+            if(targetClientId) f.append('client_id', targetClientId);
+
+            try {
+                const r = await fetch(API_URL, { method: 'POST', body: f });
+                const d = await r.json();
+                if(d.status === 'success') successCount++;
+            } catch(err) { console.error(err); }
+        }
+
+        setUploadStatus('');
+        btn.innerText = "Upload Now"; 
+        btn.disabled = false;
+        setShow(false);
+        alert(`Upload Complete: ${successCount}/${fileList.length} files saved.`);
+        fetchData();
     };
 
-    const handleDelete = async (id) => {
-        if(!confirm("Permanently delete from Drive & Portal?")) return;
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_file', token, file_id: id }) });
-        if(res.status === 'success') fetchData(); else alert(res.message);
+    const handleDelete = async (ids) => {
+        if(!confirm(`Permanently delete ${ids.length} file(s)?`)) return;
+        for (const id of ids) {
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_file', token, file_id: id }) });
+        }
+        fetchData();
     };
 
-    const filteredFiles = files.filter(f => !filterClient || f.client_id == filterClient);
+    const toggleSelection = (id) => {
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+        setSelectedIds(newSet);
+    };
+
+    const toggleAll = () => {
+        if (selectedIds.size === filteredFiles.length) setSelectedIds(new Set());
+        else setSelectedIds(new Set(filteredFiles.map(f => f.id)));
+    };
 
     if(loading) return <div className="p-8 text-center"><Icons.Loader/></div>;    
+
+    const filteredFiles = files.filter(f => !filterClient || f.client_id == filterClient);
 
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-[#2c3259]">Files & Assets</h2>
-                <button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-sm flex items-center gap-2"><Icons.Upload size={16}/> Upload File</button>
-            </div>
-            {isAdmin && (
-                <div className="flex gap-3 items-center bg-white p-4 rounded-lg border shadow-sm">
-                    <label className="text-sm font-bold text-slate-600">Filter by Client:</label>
-                    <select value={filterClient} onChange={(e) => setFilterClient(e.target.value)} className="p-2 border rounded text-sm">
-                        <option value="">-- All Files --</option>
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                    </select>
-                    {filterClient && (
-                        <button onClick={() => setFilterClient('')} className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 border rounded hover:bg-slate-50">
-                            Clear Filter
+                <div className="flex gap-2">
+                    {isAdmin && selectedIds.size > 0 && (
+                        <button onClick={() => handleDelete(Array.from(selectedIds))} className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded font-bold text-sm hover:bg-red-100 transition-colors">
+                            Delete ({selectedIds.size})
                         </button>
                     )}
+                    <button onClick={()=>setShow(true)} className="bg-[#2c3259] text-white px-4 py-2 rounded font-bold text-sm flex items-center gap-2"><Icons.Upload size={16}/> Upload Files</button>
+                </div>
+            </div>
+
+            {isAdmin && (
+                <div className="bg-slate-50 p-3 border rounded-t flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Admin Filter:</span>
+                    <select value={filterClient} onChange={e => { setFilterClient(e.target.value); setSelectedIds(new Set()); }} className="p-2 border rounded text-sm bg-white">
+                        <option value="">All Clients</option>
+                        {clients.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                    </select>
                 </div>
             )}
-            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+
+            <div className="bg-white rounded-b-xl border shadow-sm overflow-hidden">
                 <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b text-slate-500 uppercase text-xs">
-                        <tr><th className="p-4">Name</th>{isAdmin && <th className="p-4">Client</th>}<th className="p-4">Type</th><th className="p-4 text-right">Action</th></tr>
+                        <tr>
+                            {isAdmin && <th className="p-4 w-10"><input type="checkbox" onChange={toggleAll} checked={filteredFiles.length > 0 && selectedIds.size === filteredFiles.length} /></th>}
+                            <th className="p-4">Name</th>
+                            {isAdmin && !filterClient && <th className="p-4">Client</th>}
+                            <th className="p-4">Type</th>
+                            <th className="p-4 text-right">Action</th>
+                        </tr>
                     </thead>
                     <tbody>
                         {filteredFiles.length === 0 ? <tr><td colSpan="5" className="p-6 text-center text-slate-400">No files found.</td></tr> : filteredFiles.map(f => {
                             const isDrive = f.external_url && f.external_url.startsWith('drive:');
-                            // Secure Proxy URL
                             const url = isDrive ? `${API_URL}?action=download_file&token=${encodeURIComponent(token)}&file_id=${f.id}` : f.external_url;
                             return (
-                                <tr key={f.id} className="border-b hover:bg-slate-50">
+                                <tr key={f.id} className={`border-b hover:bg-slate-50 transition-colors ${selectedIds.has(f.id) ? 'bg-blue-50' : ''}`}>
+                                    {isAdmin && <td className="p-4"><input type="checkbox" checked={selectedIds.has(f.id)} onChange={() => toggleSelection(f.id)} /></td>}
                                     <td className="p-4 font-bold flex gap-3 items-center text-[#2c3259]">
-                                        {isDrive ? <Icons.Cloud className="text-blue-500" size={18}/> : <Icons.Link className="text-orange-400" size={18}/>} {f.filename}
+                                        {isDrive ? <Icons.Cloud className="text-blue-500" size={18}/> : <Icons.Link className="text-orange-400" size={18}/>} 
+                                        <span className="truncate max-w-[200px]" title={f.filename}>{f.filename}</span>
                                     </td>
-                                    {isAdmin && <td className="p-4 text-slate-600">{f.client_name}</td>}
+                                    {isAdmin && !filterClient && <td className="p-4 text-slate-600">{f.client_name}</td>}
                                     <td className="p-4 text-xs font-bold text-slate-400 uppercase">{f.file_type ? f.file_type.split('/').pop() : 'FILE'}</td>
                                     <td className="p-4 text-right flex gap-2 justify-end">
                                         <a href={url} target="_blank" className="text-blue-600 font-bold text-xs border border-blue-200 bg-blue-50 px-3 py-1 rounded hover:bg-blue-100">{isDrive ? 'Download' : 'Open'}</a>
-                                        {isAdmin && <button onClick={()=>handleDelete(f.id)} className="text-red-400 hover:text-red-600 p-1"><Icons.Trash size={16}/></button>}
                                     </td>
                                 </tr>
                             );
@@ -920,12 +967,13 @@ window.FilesView = ({ token, role }) => {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
                     <div className="bg-white p-8 rounded-xl w-full max-w-md relative shadow-2xl">
                         <button onClick={()=>setShow(false)} className="absolute top-4 right-4"><Icons.Close/></button>
-                        <h3 className="font-bold text-xl mb-4 text-[#2c3259]">Upload to Secure Storage</h3>
+                        <h3 className="font-bold text-xl mb-4 text-[#2c3259]">Upload Files</h3>
                         <form onSubmit={handleUpload} className="space-y-4">
                             {isAdmin && (<div><label className="text-xs font-bold text-slate-500">Assign to Client</label><select name="client_id" className="w-full p-2 border rounded"><option value="">-- Myself / General --</option>{clients.map(c=><option key={c.id} value={c.id}>{c.full_name}</option>)}</select></div>)}
-                            <input type="file" name="file" className="w-full text-sm file:bg-[#2c3259] file:text-white file:rounded-full file:px-4 file:py-2 file:border-0" required />
+                            <input type="file" name="file" multiple className="w-full text-sm file:bg-[#2c3259] file:text-white file:rounded-full file:px-4 file:py-2 file:border-0" required />
                             <p className="text-xs text-slate-400 text-center">Stored securely in Google Drive &gt; Client Folder</p>
-                            <button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold">Upload Now</button>
+                            {uploadStatus && <div className="text-xs font-bold text-[#2493a2] text-center animate-pulse">{uploadStatus}</div>}
+                            <button className="w-full bg-[#2c3259] text-white p-3 rounded-lg font-bold disabled:bg-slate-400">Upload Now</button>
                         </form>
                     </div>
                 </div>
@@ -1787,7 +1835,7 @@ window.ClientDashboard = ({ name, setView, token }) => { // Note: 'token' added 
             
             <div className="bg-[#2c3259] text-white p-8 rounded-2xl shadow-lg flex justify-between items-center">
                 <div>
-                    <h2 className="text-3xl font-bold">Welcome, {(name || 'Client').split(' ')[0]}!</h2>
+                    <h2 className="text-3xl font-bold">Welcome, {((name && name.trim()) ? name.trim().split(' ')[0] : 'Client')}!</h2>
                     <p className="text-white/60 text-sm mt-1">Manage your projects and billing.</p>
                 </div>
                 <button onClick={handleEditProfile} className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors">
