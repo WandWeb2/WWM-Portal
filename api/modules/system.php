@@ -44,9 +44,9 @@ function handleGetSystemLogs($pdo, $input) {
     
     ensureLogSchema($pdo);
     
-    $limit = (int)($input['limit'] ?? 100);
-    $stmt = $pdo->prepare("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT ?");
-    $stmt->execute([$limit]);
+    $limit = max(1, (int)($input['limit'] ?? 100));
+    // Note: MySQL/MariaDB do not allow binding LIMIT as a parameter, so we safely inline the int
+    $stmt = $pdo->query("SELECT * FROM system_logs ORDER BY created_at DESC LIMIT $limit");
     
     sendJson('success', 'Logs Retrieved', ['logs' => $stmt->fetchAll()]);
 }
