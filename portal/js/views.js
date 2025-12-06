@@ -550,7 +550,8 @@ window.ClientsView = ({ token, role }) => {
 
 window.SettingsView = ({ token, role }) => {
     const Icons = window.Icons;
-    const [activeTab, setActiveTab] = React.useState('admin_controls'); 
+    const isAdmin = role === 'admin';
+    const [activeTab, setActiveTab] = React.useState(isAdmin ? 'admin_controls' : 'updates');
     const [users, setUsers] = React.useState([]);
     const [rawUsers, setRawUsers] = React.useState([]); // For Audit
     const [partners, setPartners] = React.useState([]);
@@ -558,10 +559,9 @@ window.SettingsView = ({ token, role }) => {
     const [loading, setLoading] = React.useState(false);
     const [logs, setLogs] = React.useState([]);
     const [sysLogs, setSysLogs] = React.useState([]);
+    const [updates, setUpdates] = React.useState([]);
     const [showAssignModal, setShowAssignModal] = React.useState(false);
     const [selectedPartner, setSelectedPartner] = React.useState(null);
-
-    if (role !== 'admin') return <div className="p-10 text-center text-slate-500">Access Restricted</div>;
 
     // Auto-navigate to partners tab if user was just fixed
     React.useEffect(() => {
@@ -577,11 +577,19 @@ window.SettingsView = ({ token, role }) => {
     }, []);
 
     React.useEffect(() => {
-        if (activeTab === 'users') fetchUsers();
-        if (activeTab === 'partners') fetchPartners();
-        if (activeTab === 'audit') fetchAudit();
-        if (activeTab === 'logs') fetchLogs();
+        if (activeTab === 'users' && isAdmin) fetchUsers();
+        if (activeTab === 'partners' && isAdmin) fetchPartners();
+        if (activeTab === 'audit' && isAdmin) fetchAudit();
+        if (activeTab === 'logs' && isAdmin) fetchLogs();
+        if (activeTab === 'updates') fetchUpdates();
     }, [activeTab]);
+
+    const fetchUpdates = async () => {
+        setLoading(true);
+        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_updates', token }) });
+        if (res.status === 'success') setUpdates(res.updates || []);
+        setLoading(false);
+    };
 
     const fetchLogs = async () => {
         try {
@@ -671,16 +679,39 @@ window.SettingsView = ({ token, role }) => {
     const handleRecalculateAll = async () => { setLogs(prev => ["Triggering project health check...", ...prev]); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }); if(res.projects) { setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]); window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100); } };
     const handleMasterSync = async () => { setLoading(true); setLogs(prev => ["[START] Master Sync...", ...prev]); try { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); setLogs(prev => ["[CRM] Done", ...prev]); await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); setLogs(prev => ["[STRIPE] Done", ...prev]); } catch (e) { setLogs(prev => ["[ERROR] Sync Failed", ...prev]); } setLoading(false); };
 
+    const tabs = isAdmin ? ['admin_controls', 'users', 'partners', 'audit', 'logs', 'updates'] : ['updates'];
+
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="flex gap-4 border-b border-slate-200 pb-1 overflow-x-auto">
-                {['admin_controls', 'users', 'partners', 'audit', 'logs'].map(t => {
+                {tabs.map(t => {
                     const tabLabel = t === 'logs' ? 'Log/Debugging' : t.replace('_', ' ');
                     return <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-2 text-sm font-bold capitalize whitespace-nowrap ${activeTab === t ? 'text-[#2c3259] border-b-2 border-[#2c3259]' : 'text-slate-400'}`}>{tabLabel}</button>;
                 })}
             </div>
 
-            {activeTab === 'audit' && (
+            {activeTab === 'updates' && (
+                <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                    <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+                        <h3 className="font-bold text-[#2c3259]">System Changelog</h3>
+                        <span className="text-xs text-slate-500">Auto-tracked</span>
+                    </div>
+                    <div className="divide-y">
+                        {updates.map(u => (
+                            <div key={u.id} className="p-4 hover:bg-slate-50 transition-colors">
+                                <div className="flex justify-between mb-1">
+                                    <span className="font-bold text-[#2493a2] text-sm">{u.version}</span>
+                                    <span className="text-xs text-slate-400">{u.commit_date}</span>
+                                </div>
+                                <p className="text-sm text-slate-700">{u.description}</p>
+                            </div>
+                        ))}
+                        {updates.length === 0 && <div className="p-8 text-center text-slate-400">No updates logged.</div>}
+                    </div>
+                </div>
+            )}
+
+            {isAdmin && activeTab === 'audit' && (
                 <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
                     <div className="p-4 bg-red-100 text-red-900 text-sm font-bold flex justify-between items-center">
                         <span>⚠️ Database Audit (Recovery Mode) - Total Records: {rawUsers.length}</span>
@@ -718,7 +749,7 @@ window.SettingsView = ({ token, role }) => {
                 </div>
             )}
 
-            {activeTab === 'admin_controls' && (
+            {isAdmin && activeTab === 'admin_controls' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-white p-6 rounded-xl border shadow-sm">
                         <h3 className="text-lg font-bold text-[#2c3259] mb-2 flex items-center gap-2"><Icons.Activity size={20}/> Project Health</h3>
@@ -732,7 +763,7 @@ window.SettingsView = ({ token, role }) => {
                 </div>
             )}
 
-            {activeTab === 'users' && (
+            {isAdmin && activeTab === 'users' && (
                 <div className="bg-white rounded border overflow-hidden">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-slate-50 border-b"><tr><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3 text-right">Actions</th></tr></thead>
@@ -758,7 +789,7 @@ window.SettingsView = ({ token, role }) => {
                 </div>
             )}
 
-            {activeTab === 'partners' && (
+            {isAdmin && activeTab === 'partners' && (
                 <div className="space-y-6">
                     <div className="bg-white rounded border overflow-hidden">
                         <div className="p-4 border-b bg-slate-50 font-bold">Partner List</div>
@@ -787,7 +818,7 @@ window.SettingsView = ({ token, role }) => {
                 </div>
             )}
 
-            {activeTab === 'logs' && <window.StandaloneDebugPanel token={token} />}
+            {isAdmin && activeTab === 'logs' && <window.StandaloneDebugPanel token={token} />}
         </div>
     );
 };

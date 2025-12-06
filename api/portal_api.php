@@ -57,6 +57,8 @@ try {
     require_once __DIR__ . '/modules/clients.php';
     require_once __DIR__ . '/modules/files.php';
     require_once __DIR__ . '/modules/support.php';
+    require_once __DIR__ . '/modules/system.php';
+    require_once __DIR__ . '/modules/services.php';
 
     $pdo = getDBConnection($secrets);
     $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
@@ -92,6 +94,14 @@ try {
         case 'get_clients': handleGetClients($pdo, $input); break;
         case 'get_partners': handleGetPartners($pdo, $input); break;
         case 'create_client': handleCreateClient($pdo, $input, $secrets); break;
+        case 'get_updates': handleGetUpdates($pdo, $input); break;
+        case 'get_services': handleGetServices($pdo, $input, $secrets); break;
+        case 'create_product': handleCreateProduct($pdo, $input, $secrets); break;
+        case 'update_product': handleUpdateProduct($pdo, $input, $secrets); break;
+        case 'delete_product': handleDeleteProduct($pdo, $input, $secrets); break;
+        case 'toggle_product_visibility': handleToggleProductVisibility($pdo, $input); break;
+        case 'save_service_order': handleSaveServiceOrder($pdo, $input); break;
+        case 'create_checkout': handleCreateCheckout($pdo, $input, $secrets); break;
         
         default: 
             if (function_exists('handle' . str_replace('_', '', ucwords($action, '_')))) {
