@@ -62,38 +62,59 @@ function handleUploadFile($pdo, $i, $secrets) {
     }
 
     $token = getGoogleAccessToken($secrets);
+    $useLocal = empty($token);
+    $uploadDir = __DIR__ . '/../../data/uploads';
+    if (!is_dir($uploadDir)) @mkdir($uploadDir, 0775, true);
+
     $cStmt = $pdo->prepare("SELECT full_name, business_name FROM users WHERE id = ?");
     $cStmt->execute([$clientId]);
     $client = $cStmt->fetch();
     
     $folderName = preg_replace('/[^A-Za-z0-9 _-]/', '', $client['business_name'] ?: ($client['full_name'] ?: "Client_$clientId"));
-    $rootId = findOrCreateFolder($token, 'WandWeb Clients');
-    $clientIdFolder = findOrCreateFolder($token, $folderName, $rootId);
-    $sharedId = findOrCreateFolder($token, 'Shared Files', $clientIdFolder);
+    $rootId = $useLocal ? null : findOrCreateFolder($token, 'WandWeb Clients');
+    $clientIdFolder = $useLocal ? null : findOrCreateFolder($token, $folderName, $rootId);
+    $sharedId = $useLocal ? null : findOrCreateFolder($token, 'Shared Files', $clientIdFolder);
 
-    $driveId = null; $mime = 'link'; $size = 0; $filename = strip_tags($i['filename'] ?? 'Untitled');
+    $fileRef = null; $mime = 'link'; $size = 0; $filename = strip_tags($i['filename'] ?? 'Untitled');
     
     if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
         $filename = $_FILES['file']['name'];
         $mime = mime_content_type($_FILES['file']['tmp_name']);
         $size = $_FILES['file']['size'];
-        
-        $meta = json_encode(['name' => $filename, 'parents' => [$sharedId]]);
-        $boundary = '-------' . md5(time());
-        $body = "--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n--$boundary\r\nContent-Type: $mime\r\n\r\n" . file_get_contents($_FILES['file']['tmp_name']) . "\r\n--$boundary--";
-        
-        $ch = curl_init("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $token", "Content-Type: multipart/related; boundary=$boundary", "Content-Length: " . strlen($body)]);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $res = json_decode(curl_exec($ch), true);
-        curl_close($ch);
-        
-        if (empty($res['id'])) sendJson('error', 'Drive Upload Failed: ' . json_encode($res));
-        $driveId = "drive:" . $res['id'];
+
+        if (!$useLocal) {
+            // Attempt Drive upload first
+            $meta = json_encode(['name' => $filename, 'parents' => [$sharedId]]);
+            $boundary = '-------' . md5(time());
+            $body = "--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n--$boundary\r\nContent-Type: $mime\r\n\r\n" . file_get_contents($_FILES['file']['tmp_name']) . "\r\n--$boundary--";
+            
+            $ch = curl_init("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart");
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer $token", "Content-Type: multipart/related; boundary=$boundary", "Content-Length: " . strlen($body)]);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $res = json_decode(curl_exec($ch), true);
+            curl_close($ch);
+            
+            if (!empty($res['id'])) {
+                $fileRef = "drive:" . $res['id'];
+            } else {
+                // Fallback to local storage if Drive fails
+                $useLocal = true;
+            }
+        }
+
+        if ($useLocal) {
+            $safeName = preg_replace('/[^A-Za-z0-9._-]/', '_', $filename);
+            $storedName = uniqid('file_', true) . '_' . $safeName;
+            $dest = rtrim($uploadDir, '/') . '/' . $storedName;
+            if (!move_uploaded_file($_FILES['file']['tmp_name'], $dest)) {
+                sendJson('error', 'File upload failed');
+            }
+            $fileRef = 'local:' . $storedName;
+        }
     } elseif (!empty($i['external_url'])) {
-        $driveId = strip_tags($i['external_url']);
+        $fileRef = strip_tags($i['external_url']);
     } else {
         $err = $_FILES['file']['error'] ?? 'No file';
         sendJson('error', "No valid file or link provided (Code $err)");
@@ -101,7 +122,7 @@ function handleUploadFile($pdo, $i, $secrets) {
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, uploader_id INTEGER, filename TEXT, external_url TEXT, file_type TEXT, filesize INTEGER, project_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        ->execute([$clientId, $u['uid'], $filename, $driveId, $mime, $size, $pid]);
+        ->execute([$clientId, $u['uid'], $filename, $fileRef, $mime, $size, $pid]);
 
     $fileId = $pdo->lastInsertId();
     // CRITICAL FIX: Return file details so frontend knows it succeeded
@@ -118,6 +139,19 @@ function handleDownloadFile($pdo, $i, $secrets) {
     if ($u['role'] !== 'admin' && $u['uid'] != $file['client_id'] && $u['role'] !== 'partner') die("Access Denied");
 
     $ref = $file['external_url'];
+
+    // Local storage download
+    if (strpos($ref, 'local:') === 0) {
+        $basename = basename(str_replace('local:', '', $ref));
+        $path = __DIR__ . '/../../data/uploads/' . $basename;
+        if (!file_exists($path)) die("File missing");
+        header("Content-Type: " . ($file['file_type'] ?: 'application/octet-stream'));
+        header("Content-Disposition: attachment; filename=\"" . $file['filename'] . "\"");
+        readfile($path);
+        exit;
+    }
+
+    // External direct link
     if (strpos($ref, 'drive:') === false) { header("Location: $ref"); exit; }
     
     $token = getGoogleAccessToken($secrets);

@@ -32,7 +32,7 @@ const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus
     const Icons = window.Icons;
     const isAdmin = role === 'admin';
     const isManager = role === 'admin' || role === 'partner';
-    const isArchived = project.status === 'archived';
+    const isArchived = (project.status || '').toLowerCase() === 'archived';
 
     // Dynamic classes for visual state
     const containerClasses = isArchived 
@@ -1436,7 +1436,23 @@ window.BillingView = ({ token, role }) => {
 
     const loadData = () => {
         setLoading(true);
-        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_billing_overview', token }) }).then(res => { if(res && res.status === 'success') setData(res.data || res.stats || res.invoices); }).finally(()=>setLoading(false));
+        window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_billing_overview', token }) }).then(res => {
+            if(res && res.status === 'success') {
+                const normalized = {
+                    invoices: res.invoices || res.data?.invoices || [],
+                    quotes: res.quotes || res.data?.quotes || [],
+                    subscriptions: res.subscriptions || res.data?.subscriptions || [],
+                    feed: res.feed || res.data?.feed || [],
+                    payouts: res.payouts || res.data?.payouts || [],
+                    available: res.available || res.data?.available || 0,
+                    pending: res.pending || res.data?.pending || 0,
+                    reserved: res.reserved || res.data?.reserved || 0,
+                };
+                setData(normalized);
+            } else {
+                setData({ invoices: [], quotes: [], subscriptions: [], feed: [], payouts: [], available: 0, pending: 0, reserved: 0 });
+            }
+        }).finally(()=>setLoading(false));
     };
 
     const handleManageSub = async () => {
@@ -1759,7 +1775,10 @@ window.ProjectsView = ({ token, role, currentUserId }) => {
         }
     };
 
-    const filteredProjects = projects.filter(p => showArchived ? p.status === 'archived' : p.status !== 'archived');
+    const filteredProjects = projects.filter(p => {
+        const status = (p.status || '').toLowerCase();
+        return showArchived ? status === 'archived' : status !== 'archived';
+    });
     
     if(active) return <TaskManager project={active} token={token} role={role} onClose={()=>setActive(null)} />;
     

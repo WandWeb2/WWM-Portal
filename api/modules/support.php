@@ -476,4 +476,49 @@ function sendEscalationNotifications($pdo, $ticketId, $reason = '') {
     }
 }
 
+// Thread fetch for Support tickets
+function handleGetTicketThread($pdo, $input) {
+    $u = verifyAuth($input);
+    ensureSupportSchema($pdo);
+
+    $tid = (int)($input['ticket_id'] ?? 0);
+    if ($tid === 0) sendJson('error', 'Missing ticket id');
+
+    // Authorization: admin always; client must own; partner must be assigned
+    $ticket = $pdo->prepare("SELECT user_id, status, subject FROM tickets WHERE id = ?");
+    $ticket->execute([$tid]);
+    $t = $ticket->fetch();
+    if (!$t) sendJson('error', 'Ticket not found');
+
+    if ($u['role'] !== 'admin') {
+        $clientId = (int)$t['user_id'];
+        if ($u['role'] === 'client' && $clientId !== (int)$u['uid']) sendJson('error', 'Unauthorized');
+        if ($u['role'] === 'partner') {
+            ensurePartnerSchema($pdo);
+            $ps = $pdo->prepare("SELECT 1 FROM partner_assignments WHERE partner_id = ? AND client_id = ?");
+            $ps->execute([$u['uid'], $clientId]);
+            if (!$ps->fetch()) sendJson('error', 'Unauthorized');
+        }
+    }
+
+    $stmt = $pdo->prepare("SELECT tm.*, u.full_name, u.role, f.filename, f.file_type
+        FROM ticket_messages tm
+        LEFT JOIN users u ON tm.sender_id = u.id
+        LEFT JOIN shared_files f ON tm.file_id = f.id
+        WHERE tm.ticket_id = ? ORDER BY tm.id ASC");
+    $stmt->execute([$tid]);
+    $messages = $stmt->fetchAll();
+
+    $qrStmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'support_canned_responses'");
+    $qrStmt->execute();
+    $qr = json_decode($qrStmt->fetchColumn() ?: '[]', true);
+
+    sendJson('success', 'Thread Loaded', [
+        'messages' => $messages,
+        'quick_replies' => $qr,
+        'ticket_status' => $t['status'] ?? 'open',
+        'subject' => $t['subject'] ?? ''
+    ]);
+}
+
 ?>

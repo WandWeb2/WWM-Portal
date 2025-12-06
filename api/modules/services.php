@@ -56,12 +56,15 @@ function handleGetServices($pdo, $input, $secrets) {
         $isHidden = (bool)($meta[$pid]['is_hidden'] ?? false);
         if ($isHidden && $user['role'] !== 'admin') continue;
         
+        $stripeCategory = $prod['metadata']['Category'] ?? $prod['metadata']['category'] ?? null;
+        $category = $stripeCategory ?: ($meta[$pid]['category'] ?? 'General');
+
         $services[] = [
             'id' => $pid,
             'name' => $prod['name'],
             'description' => $prod['description'],
             'image' => $prod['images'][0] ?? null,
-            'category' => $meta[$pid]['category'] ?? 'General',
+            'category' => $category,
             'is_hidden' => $isHidden,
             'prod_sort' => (int)($meta[$pid]['sort_order'] ?? 999),
             'prices' => $priceMap[$pid] ?? []
