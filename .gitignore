@@ -2,6 +2,22 @@
 node_modules/
 .DS_Store
 
+# Secrets and configuration
 config.php
-secrets.js/private/
-/private/
+secrets.js
+/private/secrets.php
+.env
+
+# Logs and temporary files
+/logs/*.log
+/data/*.sqlite
+/data/*.db
+/uploads/*
+!**/.gitkeep
+
+# System files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
