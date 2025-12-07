@@ -13,7 +13,7 @@ secrets.js
 /data/*.sqlite
 /data/*.db
 /uploads/*
-!/.gitkeep
+!**/.gitkeep
 
 # System files
 .DS_Store
