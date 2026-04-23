@@ -69,7 +69,9 @@ function handleSetPassword($pdo,$i){
 function handleGetNotifications($pdo,$i){
     $u=verifyAuth($i);
     // Ensure table exists (SQLite compatible)
-    $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id $idType, user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0, created_at $tsType)");
     // Silent Schema Upgrade for Deep Linking
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_type TEXT DEFAULT NULL"); } catch(Exception $e){}
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_id INTEGER DEFAULT 0"); } catch(Exception $e){}
@@ -117,12 +119,14 @@ function handleRequestPasswordReset($pdo, $input, $secrets = []) {
         
         // Ensure password_resets table exists
         try {
+            $idType = getSqlType($pdo, 'serial');
+            $tsType = getSqlType($pdo, 'timestamp');
             $pdo->exec("CREATE TABLE IF NOT EXISTS password_resets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id $idType,
                 email VARCHAR(191),
                 token VARCHAR(255) UNIQUE,
                 expires_at DATETIME,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                created_at $tsType
             )");
         } catch (Exception $e) {
             // Table likely exists

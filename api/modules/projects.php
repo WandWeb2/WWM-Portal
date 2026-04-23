@@ -4,39 +4,39 @@
 
 function ensureProjectSchema($pdo) {
     // Create projects and dependent tables if missing. Call from handlers.
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    $autoIncrement = ($driver === 'sqlite') ? 'AUTOINCREMENT' : 'AUTO_INCREMENT';
+    $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     
     $pdo->exec("CREATE TABLE IF NOT EXISTS projects (
-        id INTEGER PRIMARY KEY $autoIncrement,
+        id $idType,
         user_id INT,
         title VARCHAR(255),
         description TEXT,
         status VARCHAR(50) DEFAULT 'onboarding',
         health_score INT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY $autoIncrement,
+        id $idType,
         project_id INT,
         title VARCHAR(255),
         is_complete TINYINT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS comments (
-        id INTEGER PRIMARY KEY $autoIncrement,
+        id $idType,
         project_id INT,
         user_id INT,
         message TEXT,
         target_type VARCHAR(50),
         target_id INT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (
-        id INTEGER PRIMARY KEY $autoIncrement,
+        id $idType,
         client_id INT,
         uploader_id INT,
         filename VARCHAR(255),
@@ -44,7 +44,7 @@ function ensureProjectSchema($pdo) {
         external_url TEXT,
         file_type VARCHAR(50),
         filesize VARCHAR(50),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
     
     // Self-repair: add missing columns
