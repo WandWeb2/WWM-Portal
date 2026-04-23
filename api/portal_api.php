@@ -3,16 +3,6 @@
 // WandWeb Portal API (Restored)
 // =============================================================================
 
-header("Access-Control-Allow-Origin: *");
-header("Content-Type: application/json; charset=UTF-8");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS, DELETE");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
-    exit();
-}
-
 ini_set('display_errors', 0);
 error_reporting(E_ALL);
 
@@ -33,7 +23,7 @@ try {
         $_SERVER['DOCUMENT_ROOT'] . '/../private/secrets.php',
         '/workspaces/WWM-Portal/private/secrets.php'
     ];
-    
+
     $secrets_path = null;
     foreach ($possible_paths as $path) {
         if (file_exists($path)) {
@@ -41,12 +31,46 @@ try {
             break;
         }
     }
-    
+
     if (!$secrets_path) {
         // Fallback for dev/test
         $secrets = ['DB_DSN' => 'sqlite:' . __DIR__ . '/../../data/portal.sqlite'];
     } else {
         $secrets = require($secrets_path);
+    }
+
+    // Secure CORS Policy
+    $allowedOrigins = ['https://wandweb.co'];
+    if (isset($secrets['ALLOWED_ORIGINS'])) {
+        if (is_array($secrets['ALLOWED_ORIGINS'])) {
+            $allowedOrigins = array_merge($allowedOrigins, $secrets['ALLOWED_ORIGINS']);
+        } else {
+            $allowedOrigins[] = $secrets['ALLOWED_ORIGINS'];
+        }
+    }
+
+    // Allow local development if no secrets file found (dev mode)
+    if (!$secrets_path) {
+        $allowedOrigins[] = 'http://localhost:3000';
+        $allowedOrigins[] = 'http://localhost:8000';
+        $allowedOrigins[] = 'http://127.0.0.1:3000';
+    }
+
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if (in_array($origin, $allowedOrigins)) {
+        header("Access-Control-Allow-Origin: " . $origin);
+    }
+
+    header("Content-Type: application/json; charset=UTF-8");
+    header("Access-Control-Allow-Methods: POST, GET, OPTIONS, DELETE");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+
+    // Ensure Vary: Origin is sent to prevent cache poisoning or incorrect caching
+    header("Vary: Origin");
+
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        http_response_code(200);
+        exit();
     }
 
     // Load Modules
