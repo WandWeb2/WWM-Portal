@@ -18,14 +18,22 @@ function ensureSystemSchema($pdo) {
     // Auto-Populate History if empty (The "Automatic" Backfill)
     $check = $pdo->query("SELECT COUNT(*) FROM portal_updates")->fetchColumn();
     if ($check == 0) {
-        $stmt = $pdo->prepare("INSERT INTO portal_updates (version, description, commit_date) VALUES (?, ?, ?)");
         $history = [
             ['v35.0', 'Implemented Dynamic AI Model Discovery (Auto-Switching)', date('Y-m-d H:i:s')],
             ['v34.2', 'Fixed AI 404 Error: Switched to gemini-pro', date('Y-m-d H:i:s', strtotime('-10 minutes'))],
             ['v34.1', 'Added Verbose AI Error Debugging', date('Y-m-d H:i:s', strtotime('-20 minutes'))],
             ['v34.0', 'System Stability Checkpoint', date('Y-m-d H:i:s', strtotime('-30 minutes'))]
         ];
-        foreach ($history as $h) $stmt->execute($h);
+
+        $placeholders = [];
+        $values = [];
+        foreach ($history as $h) {
+            $placeholders[] = "(?, ?, ?)";
+            foreach ($h as $v) $values[] = $v;
+        }
+
+        $sql = "INSERT INTO portal_updates (version, description, commit_date) VALUES " . implode(', ', $placeholders);
+        $pdo->prepare($sql)->execute($values);
     }
 }
 
