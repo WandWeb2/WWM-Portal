@@ -5,14 +5,14 @@
 // =============================================================================
 
 function ensureSystemSchema($pdo) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    $idType = ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
+    $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     
     $pdo->exec("CREATE TABLE IF NOT EXISTS portal_updates (
         id $idType,
         version VARCHAR(50),
         description TEXT,
-        commit_date DATETIME DEFAULT CURRENT_TIMESTAMP
+        commit_date $tsType
     )");
 
     // Auto-Populate History if empty (The "Automatic" Backfill)

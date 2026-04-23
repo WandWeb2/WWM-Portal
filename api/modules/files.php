@@ -120,7 +120,9 @@ function handleUploadFile($pdo, $i, $secrets) {
         sendJson('error', "No valid file or link provided (Code $err)");
     }
 
-    $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (id INTEGER PRIMARY KEY AUTOINCREMENT, client_id INTEGER, uploader_id INTEGER, filename TEXT, external_url TEXT, file_type TEXT, filesize INTEGER, project_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS shared_files (id $idType, client_id INTEGER, uploader_id INTEGER, filename TEXT, external_url TEXT, file_type TEXT, filesize INTEGER, project_id INTEGER DEFAULT 0, created_at $tsType)");
     $pdo->prepare("INSERT INTO shared_files (client_id, uploader_id, filename, external_url, file_type, filesize, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
         ->execute([$clientId, $u['uid'], $filename, $fileRef, $mime, $size, $pid]);
 

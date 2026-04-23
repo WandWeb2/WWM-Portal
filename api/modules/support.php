@@ -4,30 +4,30 @@
 
 function ensureSupportSchema($pdo) {
     // 1. Create Tables (Complete Schema) - SQLite/MySQL compatible
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    $autoIncrement = ($driver === 'sqlite') ? 'AUTOINCREMENT' : 'AUTO_INCREMENT';
-    $onUpdate = ($driver === 'sqlite') ? '' : 'ON UPDATE CURRENT_TIMESTAMP';
+    $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
+    $tsUpdateType = getSqlType($pdo, 'timestamp_update');
     
     $pdo->exec("CREATE TABLE IF NOT EXISTS tickets (
-        id INTEGER PRIMARY KEY $autoIncrement,
+        id $idType,
         user_id INT,
         project_id INT DEFAULT NULL,
         subject VARCHAR(255),
         status VARCHAR(50) DEFAULT 'open',
         priority VARCHAR(20) DEFAULT 'normal',
         is_billable TINYINT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP $onUpdate
+        created_at $tsType,
+        updated_at $tsUpdateType
     )");
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS ticket_messages (
-        id INTEGER PRIMARY KEY $autoIncrement,
+        id $idType,
         ticket_id INT,
         sender_id INT DEFAULT 0,
         message TEXT,
         is_internal TINYINT DEFAULT 0,
         attachment_path VARCHAR(255) DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
     
     // 2. SELF-REPAIR (Fixes missing columns on existing tables)

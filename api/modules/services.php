@@ -5,8 +5,7 @@
 // =============================================================================
 
 function ensureServiceSchema($pdo) {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    $idType = ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
+    $tsType = getSqlType($pdo, 'timestamp');
     
     // Local metadata for Stripe Products (Categorization, Sorting, Visibility)
     $pdo->exec("CREATE TABLE IF NOT EXISTS product_metadata (
@@ -14,7 +13,7 @@ function ensureServiceSchema($pdo) {
         category VARCHAR(100) DEFAULT 'General',
         is_hidden TINYINT DEFAULT 0,
         sort_order INT DEFAULT 999,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 }
 
