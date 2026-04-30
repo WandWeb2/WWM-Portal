@@ -2878,7 +2878,6 @@ window.StandaloneDebugPanel = ({ token }) => {
                 })
             });
             const data = await response.json();
-            console.log('[StandaloneDebug] Manual log:', data);
             setTimeout(loadLogs, 500);
         } catch (error) {
             console.error('[StandaloneDebug] Manual log failed:', error);
