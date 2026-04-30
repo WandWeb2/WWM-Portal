@@ -2840,7 +2840,6 @@ window.StandaloneDebugPanel = ({ token }) => {
                 body: JSON.stringify({ action: 'debug_test', token, test: testName })
             });
             const responseText = await response.text();
-            console.log(`[StandaloneDebug] Raw response for ${testName}:`, responseText);
             const data = JSON.parse(responseText);
             console.log(`[StandaloneDebug] Test result:`, data);
             
