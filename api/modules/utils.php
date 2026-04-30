@@ -211,7 +211,11 @@ function sendInvite($pdo, $email) {
     $pdo->prepare("INSERT INTO password_resets (email,token,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 7 DAY))")->execute([$email, $token]);
     $link = "https://wandweb.co/portal/?action=set_password&token=" . $token;
     $headers = "MIME-Version: 1.0\r\nContent-type:text/html;charset=UTF-8\r\nFrom: noreply@wandweb.co";
-    return mail($email, "Your Portal Account", "Set password here: Link", $headers);
+    $mailSent = mail($email, "Your Portal Account", "Set password here: Link", $headers);
+    if (!$mailSent) {
+        logSystemEvent($pdo, "Failed to send invite email to: $email", 'error');
+    }
+    return $mailSent;
 }
 
 function createNotification($pdo, $userId, $message, $type = null, $id = 0) {

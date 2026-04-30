@@ -141,7 +141,10 @@ function handleRequestPasswordReset($pdo, $input, $secrets = []) {
         $message = "Click the link below to reset your password:\n\n$resetLink\n\nThis link expires in 1 hour.";
         $headers = "From: noreply@wandweb.co\r\nContent-Type: text/plain; charset=UTF-8";
         
-        @mail($email, $subject, $message, $headers);
+        $mailSent = mail($email, $subject, $message, $headers);
+        if (!$mailSent) {
+            logSystemEvent($pdo, "Failed to send password reset email to: $email", 'error');
+        }
         
         sendJson('success', 'If an account exists with that email, a reset link has been sent.');
     } catch (Exception $e) {
