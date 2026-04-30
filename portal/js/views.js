@@ -2802,9 +2802,7 @@ window.StandaloneDebugPanel = ({ token }) => {
                 body: JSON.stringify({ action: 'get_system_logs', token })
             });
             const responseText = await response.text();
-            console.log('[StandaloneDebug] Raw response:', responseText);
             const data = JSON.parse(responseText);
-            console.log('[StandaloneDebug] Logs loaded:', data);
             
             if (data.status === 'success' && data.logs) {
                 setLogs(data.logs);
@@ -2833,16 +2831,13 @@ window.StandaloneDebugPanel = ({ token }) => {
 
     const runTest = async (testName, testLabel) => {
         try {
-            console.log(`[StandaloneDebug] Running test: ${testName}`);
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'debug_test', token, test: testName })
             });
             const responseText = await response.text();
-            console.log(`[StandaloneDebug] Raw response for ${testName}:`, responseText);
             const data = JSON.parse(responseText);
-            console.log(`[StandaloneDebug] Test result:`, data);
             
             // Add result to logs immediately
             const newLog = {
@@ -2878,7 +2873,6 @@ window.StandaloneDebugPanel = ({ token }) => {
                 })
             });
             const data = await response.json();
-            console.log('[StandaloneDebug] Manual log:', data);
             setTimeout(loadLogs, 500);
         } catch (error) {
             console.error('[StandaloneDebug] Manual log failed:', error);
