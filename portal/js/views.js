@@ -2802,7 +2802,6 @@ window.StandaloneDebugPanel = ({ token }) => {
                 body: JSON.stringify({ action: 'get_system_logs', token })
             });
             const responseText = await response.text();
-            console.log('[StandaloneDebug] Raw response:', responseText);
             const data = JSON.parse(responseText);
             console.log('[StandaloneDebug] Logs loaded:', data);
             
