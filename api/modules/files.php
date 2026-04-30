@@ -125,7 +125,6 @@ function handleUploadFile($pdo, $i, $secrets) {
         ->execute([$clientId, $u['uid'], $filename, $fileRef, $mime, $size, $pid]);
 
     $fileId = $pdo->lastInsertId();
-    // CRITICAL FIX: Return file details so frontend knows it succeeded
     sendJson('success', 'File Saved', ['file_id' => $fileId, 'filename' => $filename, 'file_type' => $mime]);
 }
 
