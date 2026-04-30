@@ -1021,7 +1021,7 @@ window.ServicesView = ({ token, role }) => {
         setLoading(true); 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_services', token }) })
         .then(res => { 
-            // Fix: Check res.services (flat structure) OR res.data.services (legacy)
+            // Handle both flat structure (res.services) and legacy structure (res.data.services)
             const rawList = res.services || (res.data && res.data.services) || [];
             const list = normalizeServices(rawList);
             if(res && res.status === 'success') { 
