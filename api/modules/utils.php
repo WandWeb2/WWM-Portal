@@ -230,17 +230,15 @@ function notifyPartnerIfAssigned($pdo, $clientId, $message) {
 }
 
 function notifyAllAdminsForProject($pdo, $projectId, $message) {
-    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
-    foreach ($stmt->fetchAll() as $admin) {
-        createNotification($pdo, $admin['id'], $message, 'project', $projectId);
-    }
+    ensureNotificationSchema($pdo);
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) SELECT id, ?, 'project', ? FROM users WHERE role = 'admin'");
+    $stmt->execute([$message, $projectId]);
 }
 
 function notifyAllAdminsForEscalation($pdo, $ticketId, $message) {
-    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
-    foreach ($stmt->fetchAll() as $admin) {
-        createNotification($pdo, $admin['id'], $message, 'ticket', $ticketId);
-    }
+    ensureNotificationSchema($pdo);
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) SELECT id, ?, 'ticket', ? FROM users WHERE role = 'admin'");
+    $stmt->execute([$message, $ticketId]);
 }
 
 // --- GOOGLE & AI ---
@@ -376,15 +374,9 @@ function fetchWandWebContext() {
 function notifyAllAdmins($pdo, $message, $type = 'system', $targetId = 0) {
     ensureNotificationSchema($pdo);
     try {
-        $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
-        $admins = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        
-        $insert = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) VALUES (?, ?, ?, ?)");
-        
-        foreach ($admins as $uid) {
-            $insert->execute([$uid, $message, $type, $targetId]);
-        }
-        return count($admins);
+        $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) SELECT id, ?, ?, ? FROM users WHERE role = 'admin'");
+        $stmt->execute([$message, $type, $targetId]);
+        return $stmt->rowCount();
     } catch (Exception $e) {
         logSystemEvent($pdo, "notifyAllAdmins failed: " . $e->getMessage(), 'error');
         return 0;
