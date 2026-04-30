@@ -79,6 +79,15 @@ function handleUploadFile($pdo, $i, $secrets) {
     
     if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
         $filename = $_FILES['file']['name'];
+
+        // SECURITY FIX: Restrict allowed file extensions
+        $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip', 'rar', 'webp', 'mp4', 'mov', 'webm'];
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+        if (!in_array($ext, $allowedExtensions)) {
+            sendJson('error', 'Security Error: File type not allowed.');
+        }
+
         $mime = mime_content_type($_FILES['file']['tmp_name']);
         $size = $_FILES['file']['size'];
 
