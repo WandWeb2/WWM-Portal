@@ -136,7 +136,17 @@ function handleDownloadFile($pdo, $i, $secrets) {
     $file = $stmt->fetch();
     
     if (!$file) die("File not found");
-    if ($u['role'] !== 'admin' && $u['uid'] != $file['client_id'] && $u['role'] !== 'partner') die("Access Denied");
+
+    if ($u['role'] !== 'admin' && $u['uid'] != $file['client_id']) {
+        if ($u['role'] === 'partner') {
+            ensurePartnerSchema($pdo);
+            $ps = $pdo->prepare("SELECT 1 FROM partner_assignments WHERE partner_id = ? AND client_id = ?");
+            $ps->execute([$u['uid'], $file['client_id']]);
+            if (!$ps->fetch()) die("Access Denied");
+        } else {
+            die("Access Denied");
+        }
+    }
 
     $ref = $file['external_url'];
 
