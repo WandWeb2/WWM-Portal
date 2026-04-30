@@ -142,16 +142,34 @@ function handleSaveServiceOrder($pdo, $input) {
     ensureServiceSchema($pdo);
     
     $items = $input['items'] ?? [];
-    foreach ($items as $item) {
-        $pid = $item['key'];
-        $sort = (int)$item['index'];
-        $check = $pdo->prepare("SELECT stripe_product_id FROM product_metadata WHERE stripe_product_id = ?");
-        $check->execute([$pid]);
-        if ($check->fetch()) {
-            $pdo->prepare("UPDATE product_metadata SET sort_order = ? WHERE stripe_product_id = ?")->execute([$sort, $pid]);
-        } else {
-            $pdo->prepare("INSERT INTO product_metadata (stripe_product_id, sort_order) VALUES (?, ?)")->execute([$pid, $sort]);
+    if (empty($items)) {
+        sendJson('success', 'Order Saved');
+        return;
+    }
+
+    $rawDriver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    $driver = strtolower($rawDriver);
+
+    // Chunking to avoid DB parameter limits
+    $chunks = array_chunk($items, 200);
+
+    foreach ($chunks as $chunk) {
+        $placeholders = [];
+        $params = [];
+        foreach ($chunk as $item) {
+            $placeholders[] = "(?, ?)";
+            $params[] = $item['key'];
+            $params[] = (int)$item['index'];
         }
+        $values = implode(", ", $placeholders);
+
+        if ($driver === 'sqlite') {
+            $sql = "INSERT INTO product_metadata (stripe_product_id, sort_order) VALUES $values ON CONFLICT(stripe_product_id) DO UPDATE SET sort_order = excluded.sort_order";
+        } else {
+            $sql = "INSERT INTO product_metadata (stripe_product_id, sort_order) VALUES $values ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order)";
+        }
+
+        $pdo->prepare($sql)->execute($params);
     }
     sendJson('success', 'Order Saved');
 }
