@@ -61,9 +61,9 @@ function handleDebugTest($pdo, $input, $secrets) {
     try {
         switch($testName) {
             case 'test_check_php_errors':
-                $results['php_version'] = PHP_VERSION;
-                $results['error_reporting'] = error_reporting();
-                $results['display_errors'] = ini_get('display_errors');
+                $results['php_version_secure'] = version_compare(PHP_VERSION, '8.0.0', '>=');
+                $results['error_reporting_configured'] = error_reporting() !== 0;
+                $results['display_errors_active'] = (bool)ini_get('display_errors');
                 $results['status'] = 'pass';
                 break;
                 
@@ -95,28 +95,29 @@ function handleDebugTest($pdo, $input, $secrets) {
                     'api/modules/utils.php',
                     'private/secrets.php'
                 ];
+                $all_valid = true;
                 foreach ($paths as $path) {
                     $fullPath = __DIR__ . '/../../' . $path;
-                    if (file_exists($fullPath)) {
-                        $results[$path] = [
-                            'exists' => true,
-                            'readable' => is_readable($fullPath),
-                            'writable' => is_writable($fullPath),
-                            'perms' => substr(sprintf('%o', fileperms($fullPath)), -4)
-                        ];
-                    } else {
-                        $results[$path] = ['exists' => false];
+                    if (!file_exists($fullPath) || !is_readable($fullPath)) {
+                        $all_valid = false;
+                        break;
                     }
                 }
+                $results['system_files_intact'] = $all_valid;
                 $results['status'] = 'pass';
                 break;
                 
             case 'test_check_includes':
                 $modules = ['auth', 'billing', 'clients', 'files', 'projects', 'services', 'support', 'system', 'utils'];
+                $all_loaded = true;
                 foreach ($modules as $mod) {
                     $path = __DIR__ . '/' . $mod . '.php';
-                    $results[$mod] = file_exists($path) ? 'loaded' : 'missing';
+                    if (!file_exists($path)) {
+                        $all_loaded = false;
+                        break;
+                    }
                 }
+                $results['modules_intact'] = $all_loaded;
                 $results['status'] = 'pass';
                 break;
                 
