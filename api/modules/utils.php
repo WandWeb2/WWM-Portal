@@ -248,17 +248,24 @@ function notifyAllAdminsForEscalation($pdo, $ticketId, $message) {
 function getGoogleAccessToken($secrets) {
     if (empty($secrets['GOOGLE_REFRESH_TOKEN'])) return null;
     
-    $ch = curl_init("https://oauth2.googleapis.com/token");
-    curl_setopt($ch, CURLOPT_POST, 1);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
-        'client_id' => $secrets['GOOGLE_CLIENT_ID'],
-        'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'],
+    $url = $secrets['_mock_token_url'] ?? "https://oauth2.googleapis.com/token";
+    $ch = curl_init($url);
+
+    // Allow overriding curl functions for testing without making network calls
+    $c_setopt = $secrets['_mock_curl_setopt'] ?? 'curl_setopt';
+    $c_exec = $secrets['_mock_curl_exec'] ?? 'curl_exec';
+    $c_close = $secrets['_mock_curl_close'] ?? 'curl_close';
+
+    $c_setopt($ch, CURLOPT_POST, 1);
+    $c_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'client_id' => $secrets['GOOGLE_CLIENT_ID'] ?? '',
+        'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'] ?? '',
         'refresh_token' => $secrets['GOOGLE_REFRESH_TOKEN'],
         'grant_type' => 'refresh_token'
     ]));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    $res = json_decode(curl_exec($ch), true);
-    curl_close($ch);
+    $c_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $res = json_decode($c_exec($ch), true);
+    $c_close($ch);
     return $res['access_token'] ?? null;
 }
 
