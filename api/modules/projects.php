@@ -400,12 +400,26 @@ function handleAICreateProject($pdo, $i, $s) {
         
         // Insert Tasks
         if (!empty($plan['tasks'])) {
-            $stmt = $pdo->prepare("INSERT INTO tasks (project_id, title, is_complete) VALUES (?, ?, 0)");
+            $taskValues = [];
+            $placeholders = [];
             foreach ($plan['tasks'] as $task) {
                 // Note: We currently don't store priority in tasks table, so we append it to title or just store title
                 $title = $task['title'];
                 if (isset($task['priority']) && $task['priority'] === 'high') $title = "🔥 " . $title;
-                $stmt->execute([$pid, $title]);
+                $placeholders[] = "(?, ?, 0)";
+                $taskValues[] = $pid;
+                $taskValues[] = $title;
+            }
+            if (!empty($placeholders)) {
+                // SQLite max parameters is typically 999. Since each row uses 2 parameters,
+                // chunking to 499 rows (998 params) max avoids parameter limit issues.
+                $chunks = array_chunk($taskValues, 998);
+                $chunkPlaceholders = array_chunk($placeholders, 499);
+
+                foreach ($chunks as $index => $chunkValues) {
+                    $sql = "INSERT INTO tasks (project_id, title, is_complete) VALUES " . implode(', ', $chunkPlaceholders[$index]);
+                    $pdo->prepare($sql)->execute($chunkValues);
+                }
             }
         }
         
