@@ -2852,7 +2852,7 @@ window.StandaloneDebugPanel = ({ token }) => {
                 created_at: new Date().toISOString(),
                 source: 'test_' + testName
             };
-            // FIX: Do NOT call loadLogs() here. Trust the local update.
+            // Do NOT call loadLogs() here. Trust the local update.
             setLogs(prev => [newLog, ...prev]);
         } catch (error) {
             console.error(`[StandaloneDebug] Test failed:`, error);
