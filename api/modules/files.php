@@ -79,6 +79,15 @@ function handleUploadFile($pdo, $i, $secrets) {
     
     if (isset($_FILES['file']) && $_FILES['file']['error'] === UPLOAD_ERR_OK) {
         $filename = $_FILES['file']['name'];
+
+        // SECURITY FIX: Restrict allowed file extensions
+        $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip', 'rar', 'webp', 'mp4', 'mov', 'webm'];
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+        if (!in_array($ext, $allowedExtensions)) {
+            sendJson('error', 'Security Error: File type not allowed.');
+        }
+
         $mime = mime_content_type($_FILES['file']['tmp_name']);
         $size = $_FILES['file']['size'];
 
@@ -125,7 +134,6 @@ function handleUploadFile($pdo, $i, $secrets) {
         ->execute([$clientId, $u['uid'], $filename, $fileRef, $mime, $size, $pid]);
 
     $fileId = $pdo->lastInsertId();
-    // CRITICAL FIX: Return file details so frontend knows it succeeded
     sendJson('success', 'File Saved', ['file_id' => $fileId, 'filename' => $filename, 'file_type' => $mime]);
 }
 
@@ -136,7 +144,17 @@ function handleDownloadFile($pdo, $i, $secrets) {
     $file = $stmt->fetch();
     
     if (!$file) die("File not found");
-    if ($u['role'] !== 'admin' && $u['uid'] != $file['client_id'] && $u['role'] !== 'partner') die("Access Denied");
+
+    if ($u['role'] !== 'admin' && $u['uid'] != $file['client_id']) {
+        if ($u['role'] === 'partner') {
+            ensurePartnerSchema($pdo);
+            $ps = $pdo->prepare("SELECT 1 FROM partner_assignments WHERE partner_id = ? AND client_id = ?");
+            $ps->execute([$u['uid'], $file['client_id']]);
+            if (!$ps->fetch()) die("Access Denied");
+        } else {
+            die("Access Denied");
+        }
+    }
 
     $ref = $file['external_url'];
 

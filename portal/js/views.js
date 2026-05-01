@@ -618,8 +618,31 @@ window.SettingsView = ({ token, role }) => {
         if (res.status === 'success') { setShowAssignModal(false); alert('Client assigned'); } else { alert(res.message); }
     };
     
-    const handleRecalculateAll = async () => { setLogs(prev => ["Triggering project health check...", ...prev]); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }); if(res.projects) { setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]); window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100); } };
-    const handleMasterSync = async () => { setLoading(true); setLogs(prev => ["[START] Master Sync...", ...prev]); try { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); setLogs(prev => ["[CRM] Done", ...prev]); await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); setLogs(prev => ["[STRIPE] Done", ...prev]); } catch (e) { setLogs(prev => ["[ERROR] Sync Failed", ...prev]); } setLoading(false); };
+    const handleRecalculateAll = async () => {
+        setLogs(prev => ["Triggering project health check...", ...prev]);
+        const res = await window.safeFetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'get_projects', token })
+        });
+        if (res.projects) {
+            setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]);
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' }));
+            setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100);
+        }
+    };
+    const handleMasterSync = async () => {
+        setLoading(true);
+        setLogs(prev => ["[START] Master Sync...", ...prev]);
+        try {
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) });
+            setLogs(prev => ["[CRM] Done", ...prev]);
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) });
+            setLogs(prev => ["[STRIPE] Done", ...prev]);
+        } catch (e) {
+            setLogs(prev => ["[ERROR] Sync Failed", ...prev]);
+        }
+        setLoading(false);
+    };
 
     const tabs = isAdmin ? ['admin_controls', 'users', 'partners', 'audit', 'logs', 'updates'] : ['updates'];
 
@@ -1021,7 +1044,7 @@ window.ServicesView = ({ token, role }) => {
         setLoading(true); 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_services', token }) })
         .then(res => { 
-            // Fix: Check res.services (flat structure) OR res.data.services (legacy)
+            // Handle both flat structure (res.services) and legacy structure (res.data.services)
             const rawList = res.services || (res.data && res.data.services) || [];
             const list = normalizeServices(rawList);
             if(res && res.status === 'success') { 
@@ -2852,7 +2875,7 @@ window.StandaloneDebugPanel = ({ token }) => {
                 created_at: new Date().toISOString(),
                 source: 'test_' + testName
             };
-            // FIX: Do NOT call loadLogs() here. Trust the local update.
+            // Do NOT call loadLogs() here. Trust the local update.
             setLogs(prev => [newLog, ...prev]);
         } catch (error) {
             console.error(`[StandaloneDebug] Test failed:`, error);

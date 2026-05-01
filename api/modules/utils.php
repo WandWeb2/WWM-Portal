@@ -49,6 +49,10 @@ function getSqlType($pdo, $type) {
         return ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
     }
     
+    if ($type === 'timestamp') {
+        return ($driver === 'sqlite') ? 'DATETIME DEFAULT CURRENT_TIMESTAMP' : 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP';
+    }
+
     if ($type === 'timestamp_update') {
         // SQLite does not support ON UPDATE CURRENT_TIMESTAMP
         return ($driver === 'sqlite') ? 'DATETIME DEFAULT CURRENT_TIMESTAMP' : 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP';
@@ -78,6 +82,7 @@ function verifyAuth($input) {
 
 function ensureUserSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     $pdo->exec("CREATE TABLE IF NOT EXISTS users (
         id $idType,
         email VARCHAR(191) UNIQUE,
@@ -93,17 +98,18 @@ function ensureUserSchema($pdo) {
         website VARCHAR(255),
         address TEXT,
         position VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 }
 
 function ensurePartnerSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     $pdo->exec("CREATE TABLE IF NOT EXISTS partner_assignments (
         id $idType,
         partner_id INT NOT NULL,
         client_id INT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at $tsType,
         UNIQUE(partner_id, client_id)
     )");
 }
@@ -120,7 +126,8 @@ function ensureSettingsSchema($pdo) {
 
 function ensureNotificationSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
-    $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id $idType, user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0, target_type TEXT DEFAULT NULL, target_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    $tsType = getSqlType($pdo, 'timestamp');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id $idType, user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0, target_type TEXT DEFAULT NULL, target_id INTEGER DEFAULT 0, created_at $tsType)");
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN is_read INTEGER DEFAULT 0"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_type TEXT DEFAULT NULL"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_id INTEGER DEFAULT 0"); } catch (Exception $e) {}
@@ -128,11 +135,12 @@ function ensureNotificationSchema($pdo) {
 
 function ensureLogSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
         id $idType,
         level VARCHAR(20),
         message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 }
 
@@ -230,17 +238,15 @@ function notifyPartnerIfAssigned($pdo, $clientId, $message) {
 }
 
 function notifyAllAdminsForProject($pdo, $projectId, $message) {
-    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
-    foreach ($stmt->fetchAll() as $admin) {
-        createNotification($pdo, $admin['id'], $message, 'project', $projectId);
-    }
+    ensureNotificationSchema($pdo);
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) SELECT id, ?, 'project', ? FROM users WHERE role = 'admin'");
+    $stmt->execute([$message, $projectId]);
 }
 
 function notifyAllAdminsForEscalation($pdo, $ticketId, $message) {
-    $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
-    foreach ($stmt->fetchAll() as $admin) {
-        createNotification($pdo, $admin['id'], $message, 'ticket', $ticketId);
-    }
+    ensureNotificationSchema($pdo);
+    $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) SELECT id, ?, 'ticket', ? FROM users WHERE role = 'admin'");
+    $stmt->execute([$message, $ticketId]);
 }
 
 // --- GOOGLE & AI ---
@@ -248,17 +254,24 @@ function notifyAllAdminsForEscalation($pdo, $ticketId, $message) {
 function getGoogleAccessToken($secrets) {
     if (empty($secrets['GOOGLE_REFRESH_TOKEN'])) return null;
     
-    $ch = curl_init("https://oauth2.googleapis.com/token");
-    curl_setopt($ch, CURLOPT_POST, 1);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
-        'client_id' => $secrets['GOOGLE_CLIENT_ID'],
-        'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'],
+    $url = $secrets['_mock_token_url'] ?? "https://oauth2.googleapis.com/token";
+    $ch = curl_init($url);
+
+    // Allow overriding curl functions for testing without making network calls
+    $c_setopt = $secrets['_mock_curl_setopt'] ?? 'curl_setopt';
+    $c_exec = $secrets['_mock_curl_exec'] ?? 'curl_exec';
+    $c_close = $secrets['_mock_curl_close'] ?? 'curl_close';
+
+    $c_setopt($ch, CURLOPT_POST, 1);
+    $c_setopt($ch, CURLOPT_POSTFIELDS, http_build_query([
+        'client_id' => $secrets['GOOGLE_CLIENT_ID'] ?? '',
+        'client_secret' => $secrets['GOOGLE_CLIENT_SECRET'] ?? '',
         'refresh_token' => $secrets['GOOGLE_REFRESH_TOKEN'],
         'grant_type' => 'refresh_token'
     ]));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    $res = json_decode(curl_exec($ch), true);
-    curl_close($ch);
+    $c_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $res = json_decode($c_exec($ch), true);
+    $c_close($ch);
     return $res['access_token'] ?? null;
 }
 
@@ -376,15 +389,9 @@ function fetchWandWebContext() {
 function notifyAllAdmins($pdo, $message, $type = 'system', $targetId = 0) {
     ensureNotificationSchema($pdo);
     try {
-        $stmt = $pdo->query("SELECT id FROM users WHERE role = 'admin'");
-        $admins = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        
-        $insert = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) VALUES (?, ?, ?, ?)");
-        
-        foreach ($admins as $uid) {
-            $insert->execute([$uid, $message, $type, $targetId]);
-        }
-        return count($admins);
+        $stmt = $pdo->prepare("INSERT INTO notifications (user_id, message, target_type, target_id) SELECT id, ?, ?, ? FROM users WHERE role = 'admin'");
+        $stmt->execute([$message, $type, $targetId]);
+        return $stmt->rowCount();
     } catch (Exception $e) {
         logSystemEvent($pdo, "notifyAllAdmins failed: " . $e->getMessage(), 'error');
         return 0;
