@@ -5,3 +5,4 @@ node_modules/
 config.php
 secrets.js/private/
 /private/
+data/portal.sqlite

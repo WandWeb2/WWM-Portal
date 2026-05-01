@@ -128,6 +128,20 @@ function handleRequestPasswordReset($pdo, $input, $secrets = []) {
             // Table likely exists
         }
         
+        // Rate limit check: prevent multiple requests within 15 minutes
+        $stmt = $pdo->prepare("SELECT created_at FROM password_resets WHERE email = ? ORDER BY created_at DESC LIMIT 1");
+        $stmt->execute([$email]);
+        $lastReset = $stmt->fetch();
+
+        if ($lastReset) {
+            $timeSinceLastReset = time() - strtotime($lastReset['created_at']);
+            if ($timeSinceLastReset >= 0 && $timeSinceLastReset < 900) { // 15 minutes = 900 seconds
+                logSystemEvent($pdo, "Rate limit hit for password reset: " . $email, 'warning');
+                sendJson('success', 'If an account exists with that email, a reset link has been sent.');
+                return;
+            }
+        }
+
         // Delete old reset requests for this email
         $pdo->prepare("DELETE FROM password_resets WHERE email = ?")->execute([$email]);
         
