@@ -49,6 +49,10 @@ function getSqlType($pdo, $type) {
         return ($driver === 'sqlite') ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY';
     }
     
+    if ($type === 'timestamp') {
+        return ($driver === 'sqlite') ? 'DATETIME DEFAULT CURRENT_TIMESTAMP' : 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP';
+    }
+
     if ($type === 'timestamp_update') {
         // SQLite does not support ON UPDATE CURRENT_TIMESTAMP
         return ($driver === 'sqlite') ? 'DATETIME DEFAULT CURRENT_TIMESTAMP' : 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP';
@@ -78,6 +82,7 @@ function verifyAuth($input) {
 
 function ensureUserSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     $pdo->exec("CREATE TABLE IF NOT EXISTS users (
         id $idType,
         email VARCHAR(191) UNIQUE,
@@ -93,17 +98,18 @@ function ensureUserSchema($pdo) {
         website VARCHAR(255),
         address TEXT,
         position VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 }
 
 function ensurePartnerSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     $pdo->exec("CREATE TABLE IF NOT EXISTS partner_assignments (
         id $idType,
         partner_id INT NOT NULL,
         client_id INT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_at $tsType,
         UNIQUE(partner_id, client_id)
     )");
 }
@@ -120,7 +126,8 @@ function ensureSettingsSchema($pdo) {
 
 function ensureNotificationSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
-    $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id $idType, user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0, target_type TEXT DEFAULT NULL, target_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    $tsType = getSqlType($pdo, 'timestamp');
+    $pdo->exec("CREATE TABLE IF NOT EXISTS notifications (id $idType, user_id INTEGER, message TEXT, is_read INTEGER DEFAULT 0, target_type TEXT DEFAULT NULL, target_id INTEGER DEFAULT 0, created_at $tsType)");
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN is_read INTEGER DEFAULT 0"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_type TEXT DEFAULT NULL"); } catch (Exception $e) {}
     try { $pdo->exec("ALTER TABLE notifications ADD COLUMN target_id INTEGER DEFAULT 0"); } catch (Exception $e) {}
@@ -128,11 +135,12 @@ function ensureNotificationSchema($pdo) {
 
 function ensureLogSchema($pdo) {
     $idType = getSqlType($pdo, 'serial');
+    $tsType = getSqlType($pdo, 'timestamp');
     $pdo->exec("CREATE TABLE IF NOT EXISTS system_logs (
         id $idType,
         level VARCHAR(20),
         message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at $tsType
     )");
 }
 
