@@ -189,7 +189,6 @@ window.ProductSelector = ({ token, selectedItems, onChange, filterMode = 'all' }
     React.useEffect(() => { 
         window.safeFetch('/api/portal_api.php', { method: 'POST', body: JSON.stringify({ action: 'get_services', token }) })
         .then(res => { 
-            // Fix: Check res.services (flat structure) OR res.data.services (legacy)
             const list = res.services || (res.data && res.data.services) || [];
             if(res && res.status === 'success' && Array.isArray(list)) { 
                 setProducts(list); 
