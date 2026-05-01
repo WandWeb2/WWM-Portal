@@ -170,16 +170,10 @@ function triggerSupportAI($pdo, $secrets, $ticketId) {
 
         // Insert Messages with thinking delays between AI messages
         $stmt = $pdo->prepare("INSERT INTO ticket_messages (ticket_id, sender_id, message) VALUES (?, 0, ?)");
-        $isFirstMessage = true;
         foreach ($messagesToAdd as $msg) {
             if (trim($msg)) {
-                // Add thinking delay between consecutive AI messages (but not before first AI message)
-                if (!$isFirstMessage) {
-                    usleep(1500000); // 1.5 second thinking pause between AI messages
-                }
                 $stmt->execute([$ticketId, $msg]);
-                $isFirstMessage = false;
-                usleep(250000); // 0.25s delay for DB spacing
+
             }
         }
 
