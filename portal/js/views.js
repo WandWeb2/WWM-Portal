@@ -2856,7 +2856,6 @@ window.StandaloneDebugPanel = ({ token }) => {
 
     const runTest = async (testName, testLabel) => {
         try {
-            console.log(`[StandaloneDebug] Running test: ${testName}`);
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
