@@ -536,10 +536,8 @@ window.SettingsView = ({ token, role }) => {
     const fetchLogs = async () => {
         try {
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_system_logs', token }) });
-            console.log('fetchLogs response:', res);
             if (res && res.status === 'success') {
                 setSysLogs(res.logs || []);
-                console.log('Logs updated:', res.logs?.length || 0);
             } else {
                 console.error('fetchLogs failed:', res);
                 setSysLogs([]);
