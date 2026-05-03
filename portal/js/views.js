@@ -3,7 +3,6 @@
     File: /portal/js/views.js
     Version: 31.0 (Resilience + Sorting)
     ============================================================================= */
-console.log("Views.js v31.0 - Force Loaded"); // Debugging confirmation
 
 const API_URL = '/api/portal_api.php'; 
 const LOGO_URL = "https://wandweb.co/wp-content/uploads/2025/11/WEBP-LQ-Logo-with-text-mid-White.webp";
@@ -21,12 +20,7 @@ window.formatTextWithLinks = (text) => {
 };
 
 // --- HELPERS ---
-const arrayMove = (arr, from, to) => { 
-    const res = Array.from(arr); 
-    const [removed] = res.splice(from, 1); 
-    res.splice(to, 0, removed); 
-    return res;
-};
+// arrayMove moved to utils.js
 
 const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus, onAssignManager, partners }) => {
     const Icons = window.Icons;
@@ -536,10 +530,8 @@ window.SettingsView = ({ token, role }) => {
     const fetchLogs = async () => {
         try {
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_system_logs', token }) });
-            console.log('fetchLogs response:', res);
             if (res && res.status === 'success') {
                 setSysLogs(res.logs || []);
-                console.log('Logs updated:', res.logs?.length || 0);
             } else {
                 console.error('fetchLogs failed:', res);
                 setSysLogs([]);
@@ -618,8 +610,31 @@ window.SettingsView = ({ token, role }) => {
         if (res.status === 'success') { setShowAssignModal(false); alert('Client assigned'); } else { alert(res.message); }
     };
     
-    const handleRecalculateAll = async () => { setLogs(prev => ["Triggering project health check...", ...prev]); const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) }); if(res.projects) { setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]); window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' })); setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100); } };
-    const handleMasterSync = async () => { setLoading(true); setLogs(prev => ["[START] Master Sync...", ...prev]); try { await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) }); setLogs(prev => ["[CRM] Done", ...prev]); await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) }); setLogs(prev => ["[STRIPE] Done", ...prev]); } catch (e) { setLogs(prev => ["[ERROR] Sync Failed", ...prev]); } setLoading(false); };
+    const handleRecalculateAll = async () => {
+        setLogs(prev => ["Triggering project health check...", ...prev]);
+        const res = await window.safeFetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'get_projects', token })
+        });
+        if (res.projects) {
+            setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]);
+            window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' }));
+            setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100);
+        }
+    };
+    const handleMasterSync = async () => {
+        setLoading(true);
+        setLogs(prev => ["[START] Master Sync...", ...prev]);
+        try {
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_crm_clients', token }) });
+            setLogs(prev => ["[CRM] Done", ...prev]);
+            await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'import_stripe_clients', token }) });
+            setLogs(prev => ["[STRIPE] Done", ...prev]);
+        } catch (e) {
+            setLogs(prev => ["[ERROR] Sync Failed", ...prev]);
+        }
+        setLoading(false);
+    };
 
     const tabs = isAdmin ? ['admin_controls', 'users', 'partners', 'audit', 'logs', 'updates'] : ['updates'];
 
@@ -1021,7 +1036,7 @@ window.ServicesView = ({ token, role }) => {
         setLoading(true); 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_services', token }) })
         .then(res => { 
-            // Fix: Check res.services (flat structure) OR res.data.services (legacy)
+            // Handle both flat structure (res.services) and legacy structure (res.data.services)
             const rawList = res.services || (res.data && res.data.services) || [];
             const list = normalizeServices(rawList);
             if(res && res.status === 'success') { 
@@ -2802,9 +2817,7 @@ window.StandaloneDebugPanel = ({ token }) => {
                 body: JSON.stringify({ action: 'get_system_logs', token })
             });
             const responseText = await response.text();
-            console.log('[StandaloneDebug] Raw response:', responseText);
             const data = JSON.parse(responseText);
-            console.log('[StandaloneDebug] Logs loaded:', data);
             
             if (data.status === 'success' && data.logs) {
                 setLogs(data.logs);
@@ -2833,14 +2846,12 @@ window.StandaloneDebugPanel = ({ token }) => {
 
     const runTest = async (testName, testLabel) => {
         try {
-            console.log(`[StandaloneDebug] Running test: ${testName}`);
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'debug_test', token, test: testName })
             });
             const responseText = await response.text();
-            console.log(`[StandaloneDebug] Raw response for ${testName}:`, responseText);
             const data = JSON.parse(responseText);
             console.log(`[StandaloneDebug] Test result:`, data);
             
@@ -2852,7 +2863,7 @@ window.StandaloneDebugPanel = ({ token }) => {
                 created_at: new Date().toISOString(),
                 source: 'test_' + testName
             };
-            // FIX: Do NOT call loadLogs() here. Trust the local update.
+            // Do NOT call loadLogs() here. Trust the local update.
             setLogs(prev => [newLog, ...prev]);
         } catch (error) {
             console.error(`[StandaloneDebug] Test failed:`, error);
@@ -2878,7 +2889,6 @@ window.StandaloneDebugPanel = ({ token }) => {
                 })
             });
             const data = await response.json();
-            console.log('[StandaloneDebug] Manual log:', data);
             setTimeout(loadLogs, 500);
         } catch (error) {
             console.error('[StandaloneDebug] Manual log failed:', error);
