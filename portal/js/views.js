@@ -536,10 +536,8 @@ window.SettingsView = ({ token, role }) => {
     const fetchLogs = async () => {
         try {
             const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_system_logs', token }) });
-            console.log('fetchLogs response:', res);
             if (res && res.status === 'success') {
                 setSysLogs(res.logs || []);
-                console.log('Logs updated:', res.logs?.length || 0);
             } else {
                 console.error('fetchLogs failed:', res);
                 setSysLogs([]);
@@ -620,8 +618,11 @@ window.SettingsView = ({ token, role }) => {
     
     const handleRecalculateAll = async () => {
         setLogs(prev => ["Triggering project health check...", ...prev]);
-        const res = await window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_projects', token }) });
-        if(res.projects) {
+        const res = await window.safeFetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'get_projects', token })
+        });
+        if (res.projects) {
             setLogs(prev => [`Checked ${res.projects.length} projects. Syncing displays...`, ...prev]);
             window.dispatchEvent(new CustomEvent('switch_view', { detail: 'projects' }));
             setTimeout(() => window.dispatchEvent(new CustomEvent('switch_view', { detail: 'settings' })), 100);
@@ -1042,7 +1043,7 @@ window.ServicesView = ({ token, role }) => {
         setLoading(true); 
         window.safeFetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'get_services', token }) })
         .then(res => { 
-            // Fix: Check res.services (flat structure) OR res.data.services (legacy)
+            // Handle both flat structure (res.services) and legacy structure (res.data.services)
             const rawList = res.services || (res.data && res.data.services) || [];
             const list = normalizeServices(rawList);
             if(res && res.status === 'success') { 
@@ -2823,7 +2824,6 @@ window.StandaloneDebugPanel = ({ token }) => {
                 body: JSON.stringify({ action: 'get_system_logs', token })
             });
             const responseText = await response.text();
-            console.log('[StandaloneDebug] Raw response:', responseText);
             const data = JSON.parse(responseText);
             console.log('[StandaloneDebug] Logs loaded:', data);
             
@@ -2854,7 +2854,6 @@ window.StandaloneDebugPanel = ({ token }) => {
 
     const runTest = async (testName, testLabel) => {
         try {
-            console.log(`[StandaloneDebug] Running test: ${testName}`);
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2873,7 +2872,7 @@ window.StandaloneDebugPanel = ({ token }) => {
                 created_at: new Date().toISOString(),
                 source: 'test_' + testName
             };
-            // FIX: Do NOT call loadLogs() here. Trust the local update.
+            // Do NOT call loadLogs() here. Trust the local update.
             setLogs(prev => [newLog, ...prev]);
         } catch (error) {
             console.error(`[StandaloneDebug] Test failed:`, error);
@@ -2899,7 +2898,6 @@ window.StandaloneDebugPanel = ({ token }) => {
                 })
             });
             const data = await response.json();
-            console.log('[StandaloneDebug] Manual log:', data);
             setTimeout(loadLogs, 500);
         } catch (error) {
             console.error('[StandaloneDebug] Manual log failed:', error);
