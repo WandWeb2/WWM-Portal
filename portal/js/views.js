@@ -20,12 +20,7 @@ window.formatTextWithLinks = (text) => {
 };
 
 // --- HELPERS ---
-const arrayMove = (arr, from, to) => { 
-    const res = Array.from(arr); 
-    const [removed] = res.splice(from, 1); 
-    res.splice(to, 0, removed); 
-    return res;
-};
+// arrayMove moved to utils.js
 
 const ProjectCard = ({ project, role, setActiveProject, onDelete, onUpdateStatus, onAssignManager, partners }) => {
     const Icons = window.Icons;
