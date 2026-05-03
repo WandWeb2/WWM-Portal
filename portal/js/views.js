@@ -3,7 +3,6 @@
     File: /portal/js/views.js
     Version: 31.0 (Resilience + Sorting)
     ============================================================================= */
-console.log("Views.js v31.0 - Force Loaded"); // Debugging confirmation
 
 const API_URL = '/api/portal_api.php'; 
 const LOGO_URL = "https://wandweb.co/wp-content/uploads/2025/11/WEBP-LQ-Logo-with-text-mid-White.webp";
