@@ -2824,7 +2824,6 @@ window.StandaloneDebugPanel = ({ token }) => {
             });
             const responseText = await response.text();
             const data = JSON.parse(responseText);
-            console.log('[StandaloneDebug] Logs loaded:', data);
             
             if (data.status === 'success' && data.logs) {
                 setLogs(data.logs);
